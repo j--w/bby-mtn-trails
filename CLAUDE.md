@@ -8,7 +8,9 @@ changing the routing or the data pipeline.
 ## Layout
 
 - `site/` is the deployed static site (GitHub Pages serves this folder).
-  - `index.html`: route builder UI (one ES module inline script; map, profile and cue sheet are hand-drawn SVG).
+  - `index.html`: route builder UI (one ES module inline script; Leaflet 1.9.4 from cdnjs with OSM/OpenTopoMap tiles for the
+    map, hand-drawn SVG elevation profile). Grades still drive routing data but are not shown or chosen in the UI;
+    new routes allow every vetted trail (maxg 4), and loaded route codes keep their own maxg/late.
   - `js/router-core.js`: route search. Pure functions, no DOM. `buildGraph`, `solve` (target mode),
     `solveLongest` (longest-loop mode). Shared by the page, the worker and the tests.
   - `js/router-worker.js`: Web Worker wrapper (`importScripts('router-core.js')`).
