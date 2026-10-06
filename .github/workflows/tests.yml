@@ -1,0 +1,28 @@
+name: Tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Route search tests
+        run: npm test
+      - name: Area data rebuilds from the curated export
+        run: |
+          python3 scripts/build_router_data.py --out /tmp/rebuilt.json
+          python3 - <<'PY'
+          import json
+          a = json.load(open('/tmp/rebuilt.json')); b = json.load(open('site/data/burnaby-mountain.json'))
+          a.pop('version', None); b.pop('version', None)
+          assert a == b, "site/data/burnaby-mountain.json is out of date: run python3 scripts/build_router_data.py and commit it"
+          print("area data is up to date")
+          PY
