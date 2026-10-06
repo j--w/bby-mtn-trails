@@ -1,7 +1,7 @@
 # Trail Route Builder
 
 Build trail-running loops on Burnaby Mountain from a **distance and climb target**, or ask for the
-**longest loop** with the fewest repeats. Routes use a hand-vetted trail network, with turn-by-turn cues,
+**longest loop** with the fewest repeats. Routes use a hand-vetted trail network, drawn on OpenStreetMap tiles with
 an elevation profile and GPX download. Made for ultramarathon training and sharing runs with a club.
 
 - **Route builder:** `site/index.html`
