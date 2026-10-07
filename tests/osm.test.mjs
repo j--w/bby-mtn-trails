@@ -83,7 +83,7 @@ test('ways split at junctions; the draft keeps trails and drops short stubs', ()
 // The OSM exports Burnaby's network was first made from, cut to the network's box: the automatic draft
 // alone should already give a large connected network around the trailheads.
 test('Burnaby Mountain raw OSM: draft and build give a usable network', () => {
-  const site = load('../site/data/burnaby-mountain.json');
+  const site = load('fixtures/burnaby-legacy.json');
   const lats = site.nodes.map(n => n[0]), lons = site.nodes.map(n => n[1]);
   const [s, w, n, e] = [Math.min(...lats), Math.min(...lons), Math.max(...lats), Math.max(...lons)];
   const elements = [...load('../data/burnaby-mountain/raw/osm-trails.json').elements, ...load('../data/burnaby-mountain/raw/osm-roads.json').elements]

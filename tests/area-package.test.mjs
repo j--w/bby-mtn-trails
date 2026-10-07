@@ -8,7 +8,7 @@ import { compileArea, suggestConnectors, makePackage, readPackage, emptyEdits, k
 const load = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
 
 // Burnaby's raw OSM exports cut to the network's box (no node ids in these exports: keys are i<index>)
-const site = load('../site/data/burnaby-mountain.json');
+const site = load('fixtures/burnaby-legacy.json');
 const lats = site.nodes.map(n => n[0]), lons = site.nodes.map(n => n[1]);
 const [S, W, Nn, E] = [Math.min(...lats), Math.min(...lons), Math.max(...lats), Math.max(...lons)];
 const raw = parseOsm({ elements: [...load('../data/burnaby-mountain/raw/osm-trails.json').elements, ...load('../data/burnaby-mountain/raw/osm-roads.json').elements]
@@ -106,4 +106,13 @@ test('a drawn path joins a cut-off trail to the network and can hold a trailhead
   // it survives a save and reload
   const pkg = readPackage(JSON.parse(JSON.stringify(makePackage({ name: 'T', bbox: [S, W, Nn, E], raw, edits, compiled: c }))));
   assert.deepEqual(compileArea(pkg.osm, pkg.edits).data.th, c.data.th);
+});
+
+test('the built-in Burnaby area file loads, and its routing graph matches its saved edits', () => {
+  const pkg = readPackage(load('../site/data/burnaby-mountain.trails.json'));
+  const c = compileArea(pkg.osm, pkg.edits).data;   // elevations aside: the setup page smooths those after compiling
+  assert.deepEqual(c.segs, pkg.data.segs);
+  assert.deepEqual(c.th, pkg.data.th);
+  assert.deepEqual(c.nodes.map(n => n.slice(0, 2)), pkg.data.nodes.map(n => n.slice(0, 2)));
+  assert.ok(pkg.data.th.length > 0);
 });

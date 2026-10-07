@@ -160,16 +160,17 @@ footer a{color:inherit}
 
 <script src="js/router-core.js"></script>
 <script type="module">
-/* ---------- area: the built-in Burnaby graph, or one made on the setup page (?area=local, or ?area=<file url>) ---------- */
+/* ---------- area: the built-in Burnaby area file, or one made on the setup page (?area=local, or ?area=<file url>) ---------- */
 import { loadArea, saveArea } from './js/area-store.js';
 import { readPackage } from './js/area-package.js';
+const BUILTIN = 'data/burnaby-mountain.trails.json';
 async function loadData(){
   const q = new URLSearchParams(location.search).get('area');
-  if(!q) return { data: await fetch('data/burnaby-mountain.json').then(r => r.json()), name: 'Burnaby Mountain', short: 'Burnaby Mtn', attribution: [], custom: false };
   try {
-    const json = q === 'local' ? await loadArea('current') : await fetch(q).then(r => r.ok ? r.json() : null).catch(() => null);
+    const json = q === 'local' ? await loadArea('current') : await fetch(q || BUILTIN).then(r => r.ok ? r.json() : null).catch(() => null);
     if (!json) throw new Error(q === 'local' ? 'nothing saved in this browser yet.' : 'the file couldn’t be read.');
     const pkg = readPackage(json);
+    if (!q) return { data: pkg.data, name: 'Burnaby Mountain', short: 'Burnaby Mtn', attribution: pkg.attribution.slice(1), custom: false };
     return { data: pkg.data, name: pkg.name || 'My area', short: pkg.name || 'Trail', attribution: pkg.attribution.slice(1), custom: true };
   } catch (err) {
     document.body.innerHTML = `<p style="padding:24px">Couldn’t open that area: ${(err?.message || 'not found').replace(/</g,'&lt;')} <a href="setup/">Set up an area</a> or <a href="./">use Burnaby Mountain</a>.</p>`;

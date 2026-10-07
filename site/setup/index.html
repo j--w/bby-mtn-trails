@@ -113,6 +113,7 @@ footer a{color:inherit}
       <div class="row">
         <button class="button quiet" id="resume" hidden></button>
         <label class="button quiet" style="cursor:pointer">Open an area file<input type="file" id="openfile" accept=".json,application/json" hidden></label>
+        <button class="button quiet" id="editbuiltin">Edit Burnaby Mountain</button>
       </div>
     </section>
 
@@ -683,14 +684,22 @@ $('back2').onclick = () => setStep('trails');
 $('openfile').onchange = async e => {
   const f = e.target.files[0]; e.target.value = '';
   if (!f) return;
-  try {
-    const pkg = readPackageLoose(JSON.parse(await f.text()));
-    S.bbox = pkg.bbox; setBox(pkg.bbox); S.edits = pkg.edits; S.name = pkg.name || ''; S.undo = [];
-    S.ele = { sources: pkg.elevation?.sources || {}, missing: 0 }; S.osmTimestamp = pkg.osmTimestamp;
-    await startEditing(pkg.osm);
-    await saveArea('draft', { bbox: S.bbox, raw: pkg.osm, ele: S.ele, osmTimestamp: S.osmTimestamp, edits: S.edits, name: S.name });
-  } catch (err) { toast(err.message || 'That file couldn\'t be read.'); }
+  try { await openPackage(JSON.parse(await f.text())); } catch (err) { toast(err.message || 'That file couldn\'t be read.'); }
 };
+// the route builder's own area: edit it here, download, and commit it as site/data/burnaby-mountain.trails.json
+$('editbuiltin').onclick = async () => {
+  try {
+    const json = await fetch('../data/burnaby-mountain.trails.json').then(r => r.ok ? r.json() : Promise.reject());
+    await openPackage(json);
+  } catch (err) { toast(err?.message || 'Couldn\'t load Burnaby Mountain.'); }
+};
+async function openPackage(json) {
+  const pkg = readPackageLoose(json);
+  S.bbox = pkg.bbox; setBox(pkg.bbox); S.edits = pkg.edits; S.name = pkg.name || ''; S.undo = [];
+  S.ele = { sources: pkg.elevation?.sources || {}, missing: 0 }; S.osmTimestamp = pkg.osmTimestamp;
+  await startEditing(pkg.osm);
+  await saveArea('draft', { bbox: S.bbox, raw: pkg.osm, ele: S.ele, osmTimestamp: S.osmTimestamp, edits: S.edits, name: S.name });
+}
 // an area file still being set up may have no trailhead yet; only the route builder needs one
 function readPackageLoose(json) {
   try { return readPackage(json); } catch (err) {

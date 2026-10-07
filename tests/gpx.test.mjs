@@ -8,7 +8,7 @@ import { compileArea, emptyEdits, withDrawn } from '../site/js/area-package.js';
 
 const load = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
 const gpx = name => parseGpx(readFileSync(new URL(`../data/burnaby-mountain/raw/${name}.gpx`, import.meta.url), 'utf8'));
-const site = load('../site/data/burnaby-mountain.json');
+const site = load('fixtures/burnaby-legacy.json');
 const lats = site.nodes.map(n => n[0]), lons = site.nodes.map(n => n[1]);
 const bbox = [Math.min(...lats), Math.min(...lons), Math.max(...lats), Math.max(...lons)];
 const elements = [...load('../data/burnaby-mountain/raw/osm-trails.json').elements, ...load('../data/burnaby-mountain/raw/osm-roads.json').elements]
@@ -32,7 +32,7 @@ test('a track picks out the trails it follows', () => {
   const c = compileArea(raw);
   const m = matchTrack({ nodes: raw.nodes, pieces: c.pieces, tracks: [...gpx('exhaustive'), ...gpx('spiral-of-doom')], bbox });
   const km = m.followed.reduce((s, f) => s + f.len, 0) / 1000;
-  // Jim's curated network (built from these tracks) is ~51 km
+  // the old hand-curated network (built from these tracks) was ~51 km
   assert.ok(km > 40 && km < 60, `${km.toFixed(1)} km followed`);
   assert.ok(m.offM < 2000, `${m.offM} m off the network`);
 });

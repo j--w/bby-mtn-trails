@@ -5,7 +5,7 @@ Build trail-running loops on Burnaby Mountain from a **distance and climb target
 an elevation profile and GPX download. Made for ultramarathon training and sharing runs with a club.
 
 - **Route builder:** `site/index.html`
-- **Trail editor** (curate the network): `site/editor/index.html`
+- **Area setup** (make a network for any trail area from OpenStreetMap): `site/setup/index.html`
 
 ## Run it locally
 
@@ -18,15 +18,14 @@ The pages load JSON with `fetch`, so open them through a local server, not as `f
 
 ## Update the trail network
 
-1. Open `/editor/`, go to **Export → Load a saved file**, and paste the contents of `data/burnaby-mountain/curated.json`.
-2. Make your changes, then **Export → Download JSON** and save over `data/burnaby-mountain/curated.json`.
-3. Run `python3 scripts/build_router_data.py`, then commit.
-
-Details: [`docs/CONTEXT.md`](docs/CONTEXT.md).
+1. Open `/setup/` and press **Edit Burnaby Mountain**.
+2. Make your changes, then **Download area file** and save it over `site/data/burnaby-mountain.trails.json`.
+3. Run `npm test`, then commit.
 
 ## Deploy
 
-Push to GitHub, then go to **Settings → Pages → Source: GitHub Actions**. Every push to `main` publishes `site/`.
+Go to **Settings → Pages → Source: Deploy from a branch, `gh-pages`, `/ (root)`**. Every push to `main` publishes
+`site/` to that branch, and each pull request gets a preview at `pr-preview/pr-<number>/`.
 
 ## Credits
 

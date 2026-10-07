@@ -1,22 +1,15 @@
-// Area build tests: the JS port must give the same routing data as scripts/build_router_data.py.
+// Area build tests: the JS port gives the same routing data the Python build (scripts/build_router_data.py, removed;
+// see git history) gave for the same input.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { buildRouterData, inputFromEditor, pyRound } from '../site/js/area-build.js';
 
 const load = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
-const strip = d => { const { version, ...rest } = d; return rest; };
-
-test('Burnaby Mountain: same output as the committed site data', () => {
-  const { data, report } = buildRouterData(inputFromEditor(load('../data/burnaby-mountain/curated.json'), load('../site/data/burnaby-mountain-editor.json')));
-  assert.deepEqual(strip(data), strip(load('../site/data/burnaby-mountain.json')));
-  assert.equal(report.snapped.length, 3);
-  assert.equal(report.closed.length, 4);
-});
 
 // Small made-up network that exercises every step: a near-miss snap, a dead end closed by a short extra,
 // an island joined through a 50 m extra (splitting the segment it lands on), and a far island that is dropped.
-// Expected output made with:
+// Expected output made with the removed Python build:
 //   python3 scripts/build_router_data.py --editor tests/fixtures/synthetic-editor.json \
 //     --curated tests/fixtures/synthetic-curated.json --out tests/fixtures/synthetic-expected.json --version test
 test('synthetic network: same output as the Python build', () => {
