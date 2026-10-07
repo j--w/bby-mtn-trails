@@ -12,13 +12,16 @@ local running club. Static site, no server. Areas are set up in the browser from
   - `index.html`: the route builder page, a thin consumer of the widget (top bar, start screen). Opens
     `?area=<url of a .trails.json>`, else the last area opened in this browser (IndexedDB `current`), else a start
     screen (open an area file / set one up).
-  - `widget/v1/`: the embeddable route builder. `trails-widget.js` exports `mount(el, options)` (map, controls,
-    results, elevation profile, GPX; Leaflet 1.9.4 from cdnjs, injected if the host lacks it; CSS scoped under `.tw`;
-    search runs in a blob worker that `importScripts` `js/router-core.js`, so it works cross-origin).
-    `model.js` holds the DOM-free parts (params, trailheads, `toRoute`, GPX). `trails-widget.d.ts` is the public
-    contract: keep it backward compatible within v1 (new optional fields only; breaking changes go in `v2/`).
-    Params are metres; trailhead ids are positions (`lat,lon` to 5 places). Grades still drive routing data but
-    aren't offered: every vetted trail is allowed (maxg 4).
+  - `widget/v1/`: the two embeddable widgets. `trails-widget.js` exports `mount(el, options)`, the route builder
+    (map, controls, results, elevation profile, GPX; search runs in a blob worker that `importScripts`
+    `js/router-core.js`, so it works cross-origin). `setup-widget.js` exports `mountSetup(el, options)`, area setup
+    (tracks from the host, `onCoverage`, `onAreaSaved`; compiling runs in a blob module worker that imports
+    `js/area-worker.js`). They're separate so route-only pages don't load setup. `common.js` has what both share
+    (Leaflet 1.9.4 from cdnjs, injected if the host lacks it; the theme tokens and base CSS, scoped under `.tw`).
+    `model.js` holds the route builder's DOM-free parts (params, trailheads, `toRoute`, GPX). The `.d.ts` files are
+    the public contract: keep them backward compatible within v1 (new optional fields only; breaking changes go in
+    `v2/`). Params are metres; trailhead ids are positions (`lat,lon` to 5 places). Grades still drive routing data
+    but aren't offered: every vetted trail is allowed (maxg 4).
   - `js/router-core.js`: route search. Pure functions, no DOM, classic script (no exports). `buildGraph`, `solve`
     (target mode), `solveLongest` (longest-loop mode), `routeGeometry` (route → points with distance and lap),
     `reachableKm`. Shared by the widget's worker and the tests.
@@ -32,12 +35,13 @@ local running club. Static site, no server. Areas are set up in the browser from
     routing graph). `compileArea`, `suggestConnectors`, `makePackage`, `readPackage`. Pure.
   - `js/gpx.js`: `parseGpx` and `matchTrack` (which network pieces a GPS track follows, and the stretches it runs
     where the network has nothing, which the setup page adds as drawn paths). Pure.
-  - `js/area-worker.js` (module worker, compiles off the main thread) and `js/area-store.js` (IndexedDB: the setup
+  - `js/area-worker.js` (module worker for the setup widget, compiles off the main thread) and `js/area-store.js` (IndexedDB: the setup
     draft and the `current` area the route builder opens).
-  - `setup/index.html`: area setup. Pick a rectangle, load OSM trails and elevations, curate (trails, trailheads,
-    split, join, drawn paths OSM lacks, GPX tracks, connector suggestions), then download the area file or open it in the route builder.
+  - `setup/index.html`: the area setup page, a thin consumer of the setup widget (top bar; saving stores the area as
+    `current` and opens the route builder).
 - `data/burnaby-mountain/raw/`: OSM Overpass exports and GPX files, used by the tests.
-- `tests/widget.test.mjs`: the widget's model (params, trailheads, routes, GPX) against a real search.
+- `tests/widget.test.mjs`: the route widget's model (params, trailheads, routes, GPX) against a real search, and the
+  setup widget's `parseGpx`.
 - `tests/router.test.mjs`: Node tests for the route search, on the old hand-curated Burnaby graph
   (`tests/fixtures/burnaby-legacy.json`, frozen; the other tests use it as a reference network too).
 - `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`, `tests/area-package.test.mjs`,

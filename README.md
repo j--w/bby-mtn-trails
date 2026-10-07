@@ -6,6 +6,7 @@ curate it. Routes are drawn on OpenStreetMap tiles with an elevation profile and
 
 - **Route builder:** `site/index.html`
 - **Area setup** (make a network for any trail area from OpenStreetMap): `site/setup/index.html`
+- **Widgets** for embedding both in another app: `site/widget/v1/`
 
 ## Run it locally
 
@@ -22,10 +23,11 @@ There's no built-in area. Make one on `/setup/` (pick a box on the map, curate t
 area file or open it in the route builder), or open a `.trails.json` someone shared. A file on the web opens with
 `?area=<url>`, which is handy for a club link. The route builder reopens the last area you used in that browser.
 
-## Embed the route builder
+## Embed the widgets
 
-The route builder is a widget you can put in your own page or app. It draws into one element and lays itself out
-there, so give the element a height. Types are in `site/widget/v1/trails-widget.d.ts`.
+There are two widgets you can put in your own page or app: the route builder (`trails-widget.js`) and area setup
+(`setup-widget.js`). They're separate so a page that only builds routes doesn't load setup. Each draws into one
+element and lays itself out there, so give the element a height. Types are in `site/widget/v1/trails-widget.d.ts`.
 
 ```html
 <div id="routes" style="height: 640px"></div>
@@ -45,8 +47,24 @@ there, so give the element a height. Types are in `site/widget/v1/trails-widget.
 ```
 
 The same area and `params` (seed included) always give the same route, so store `route.params` and rebuild from
-it. Without `onExport` the widget offers a GPX download instead. Restyle it by setting `--tw-accent`,
-`--tw-accent-soft`, `--tw-font`, `--tw-radius` and `--tw-radius-sm` on any ancestor.
+it. Without `onExport` the widget offers a GPX download instead.
+
+Area setup works the same way (types in `site/widget/v1/setup-widget.d.ts`). Your app can pass the runner's GPS
+tracks, which show which trails they use and what OpenStreetMap is missing, and gets the finished area back:
+
+```js
+import { mountSetup } from 'https://j--w.github.io/bby-mtn-trails/widget/v1/setup-widget.js';
+
+mountSetup(document.getElementById('setup'), {
+  view: { center: [45.55, -122.75], zoom: 13 },            // where to start picking an area
+  tracks: runs.map(r => ({ name: r.name, points: r.latlng })),   // e.g. Strava latlng streams
+  onCoverage: c => c && console.log(`${c.gaps.length} stretches OpenStreetMap doesn't have`),
+  onAreaSaved: area => saveToAccount(area),                // then mount the route builder with { area }
+});
+```
+
+Without `onAreaSaved` the setup widget offers a download of the area file. Restyle either widget by setting
+`--tw-accent`, `--tw-accent-soft`, `--tw-font`, `--tw-radius` and `--tw-radius-sm` on any ancestor.
 
 ## Deploy
 
