@@ -1,11 +1,11 @@
 # Trail Route Builder
 
-Build trail-running loops on Burnaby Mountain from a **distance and climb target**, or ask for the
-**longest loop** with the fewest repeats. Routes use a hand-vetted trail network, drawn on OpenStreetMap tiles with
-an elevation profile and GPX download. Made for ultramarathon training and sharing runs with a club.
+Build trail-running loops on any trail network from a **distance and climb target**, or ask for the
+**longest loop** with the fewest repeats. You set up the network for your area from OpenStreetMap and
+curate it. Routes are drawn on OpenStreetMap tiles with an elevation profile and GPX download. Made for ultramarathon training and sharing runs with a club.
 
 - **Route builder:** `site/index.html`
-- **Trail editor** (curate the network): `site/editor/index.html`
+- **Area setup** (make a network for any trail area from OpenStreetMap): `site/setup/index.html`
 
 ## Run it locally
 
@@ -16,17 +16,16 @@ npm test             # route search tests (Node 20+)
 
 The pages load JSON with `fetch`, so open them through a local server, not as `file://`.
 
-## Update the trail network
+## Areas
 
-1. Open `/editor/`, go to **Export → Load a saved file**, and paste the contents of `data/burnaby-mountain/curated.json`.
-2. Make your changes, then **Export → Download JSON** and save over `data/burnaby-mountain/curated.json`.
-3. Run `python3 scripts/build_router_data.py`, then commit.
-
-Details: [`docs/CONTEXT.md`](docs/CONTEXT.md).
+There's no built-in area. Make one on `/setup/` (pick a box on the map, curate the trails, then download the
+area file or open it in the route builder), or open a `.trails.json` someone shared. A file on the web opens with
+`?area=<url>`, which is handy for a club link. The route builder reopens the last area you used in that browser.
 
 ## Deploy
 
-Push to GitHub, then go to **Settings → Pages → Source: GitHub Actions**. Every push to `main` publishes `site/`.
+Go to **Settings → Pages → Source: Deploy from a branch, `gh-pages`, `/ (root)`**. Every push to `main` publishes
+`site/` to that branch, and each pull request gets a preview at `pr-preview/pr-<number>/`.
 
 ## Credits
 

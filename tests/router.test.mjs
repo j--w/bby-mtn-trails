@@ -9,7 +9,7 @@ const ctx = vm.createContext({ Math, Map, Set, Float64Array, Uint8Array, Infinit
 vm.runInContext(core + '\nthis.api={setGraph,buildGraph,workerGraph,solve,solveLongest};', ctx);
 const { setGraph, buildGraph, workerGraph, solve, solveLongest } = ctx.api;
 
-const DATA = JSON.parse(readFileSync(new URL('../site/data/burnaby-mountain.json', import.meta.url), 'utf8'));
+const DATA = JSON.parse(readFileSync(new URL('fixtures/burnaby-legacy.json', import.meta.url), 'utf8'));
 const g = buildGraph(DATA);
 setGraph(workerGraph(g));
 const starts = DATA.th.map(t => g.J(t.node));

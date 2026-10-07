@@ -1,6 +1,6 @@
 ---
 name: Feature
-about: An idea for the route builder or editor
+about: An idea for the route builder or area setup
 labels: enhancement
 ---
 

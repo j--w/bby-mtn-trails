@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0f172a">
-<title>Burnaby Mountain Route Builder</title>
+<title>Trail Route Builder</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
 <style>
@@ -112,7 +112,7 @@ footer a{color:inherit}
 <div class="app">
   <aside>
     <div class="head">
-      <h1>Burnaby Mountain routes</h1>
+      <h1>Trail routes</h1>
       <p id="netmeta"></p>
     </div>
     <form id="form" class="form" novalidate>
@@ -160,20 +160,43 @@ footer a{color:inherit}
 
 <script src="js/router-core.js"></script>
 <script type="module">
-/* ---------- area: the built-in Burnaby graph, or one made on the setup page (?area=local, or ?area=<file url>) ---------- */
+/* ---------- area: one made on the setup page. ?area=<file url> opens a shared file; otherwise the last area opened in this browser ---------- */
 import { loadArea, saveArea } from './js/area-store.js';
 import { readPackage } from './js/area-package.js';
+async function openFile(f){
+  const pkg = readPackage(await f.text());
+  if (!await saveArea('current', pkg)) throw new Error('this browser won’t store it');
+  location.href = './';
+}
+// no area yet (or one that couldn't be read): say so and offer the two ways in
+function startScreen(problem){
+  const esc = t => t.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  document.body.innerHTML = `<main style="max-width:440px;margin:12vh auto;padding:0 16px">
+    <h1 style="font-size:22px;margin:0 0 8px">Trail routes</h1>
+    ${problem ? `<p class="notice" style="margin:0 0 12px">Couldn’t open that area: ${esc(problem)}</p>` : ''}
+    <p class="muted" style="margin:0 0 16px">Build loops on a trail network you’ve set up. Open an area file, or make one from OpenStreetMap.</p>
+    <div class="row" style="gap:8px">
+      <label class="button primary" style="cursor:pointer">Open an area file<input type="file" id="startfile" accept=".json,application/json" hidden></label>
+      <a class="button" href="setup/" style="text-decoration:none;color:inherit">Set up an area</a>
+    </div>
+    <p class="small muted" id="starterr" style="margin-top:12px"></p>
+  </main>`;
+  document.getElementById('startfile').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    try { await openFile(f); } catch (err) { document.getElementById('starterr').textContent = `Couldn’t open that file: ${err.message}`; }
+  };
+}
 async function loadData(){
   const q = new URLSearchParams(location.search).get('area');
-  if(!q) return { data: await fetch('data/burnaby-mountain.json').then(r => r.json()), name: 'Burnaby Mountain', short: 'Burnaby Mtn', attribution: [], custom: false };
+  let json = null;
   try {
-    const json = q === 'local' ? await loadArea('current') : await fetch(q).then(r => r.ok ? r.json() : null).catch(() => null);
-    if (!json) throw new Error(q === 'local' ? 'nothing saved in this browser yet.' : 'the file couldn’t be read.');
+    json = q && q !== 'local' ? await fetch(q).then(r => r.ok ? r.json() : null).catch(() => null) : await loadArea('current');
+    if (!json) throw new Error(q && q !== 'local' ? 'the file couldn’t be read.' : '');
     const pkg = readPackage(json);
-    return { data: pkg.data, name: pkg.name || 'My area', short: pkg.name || 'Trail', attribution: pkg.attribution.slice(1), custom: true };
+    return { data: pkg.data, name: pkg.name || 'My area', short: pkg.name || 'Trail', attribution: pkg.attribution.slice(1) };
   } catch (err) {
-    document.body.innerHTML = `<p style="padding:24px">Couldn’t open that area: ${(err?.message || 'not found').replace(/</g,'&lt;')} <a href="setup/">Set up an area</a> or <a href="./">use Burnaby Mountain</a>.</p>`;
-    throw err;
+    startScreen(err?.message || '');
+    return new Promise(() => {});   // nothing to route on: stop here
   }
 }
 const AREA = await loadData(), DATA = AREA.data;
@@ -181,10 +204,7 @@ document.title = `${AREA.name} Route Builder`;
 document.querySelector('h1').textContent = `${AREA.name} routes`;
 document.getElementById('areafile').onchange = async e => {
   const f = e.target.files[0]; if (!f) return;
-  try { const pkg = readPackage(await f.text());
-    if (!await saveArea('current', pkg)) throw new Error('this browser won’t store it');
-    location.href = '?area=local';
-  } catch (err) { toast(`Couldn’t open that file: ${err.message}`); }
+  try { await openFile(f); } catch (err) { toast(`Couldn’t open that file: ${err.message}`); }
 };
 if (AREA.attribution.length) document.querySelector('footer').insertAdjacentText('beforeend', ' ' + AREA.attribution.join('. ') + '.');
 const NS='http://www.w3.org/2000/svg';
@@ -340,7 +360,7 @@ function renderShare(){
   box.innerHTML = `<h2 class="section-title">Take it with you</h2>
     <div class="row"><button class="button primary" id="dl">Download GPX</button><button class="button" id="copygpx">Copy GPX</button></div>
     <textarea id="gpxtext" readonly hidden aria-label="GPX text"></textarea>
-    <p class="small muted" style="margin-top:12px">Route code. Anyone who loads it${AREA.custom ? ' with this area file' : ''} gets this exact route.</p>
+    <p class="small muted" style="margin-top:12px">Route code. Anyone who loads it with this area file gets this exact route.</p>
     <div class="row" style="margin-top:6px"><span class="code" id="code">${routeCode()}</span><button class="button quiet sm" id="copycode">Copy</button></div>`;
   $('dl').onclick=()=>{ const name=routeName().replace(/[^\w .-]/g,''); saveFile(name+'.gpx', gpx(), 'application/gpx+xml'); };
   $('copygpx').onclick=async()=>{
