@@ -34,7 +34,7 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
     (target mode), `solveLongest` (longest-loop mode), `routeGeometry` (route → points with distance and lap),
     `reachableKm`. Shared by the widget's worker and the tests.
   - `js/area-build.js`: `buildRouterData` (snap near-misses, close dead ends, drop islands) → compact routing
-    graph. Port of the old Python build (removed; see git history). ES module, pure.
+    graph. Started as a port of the old Python build (removed; see git history). ES module, pure.
   - `js/osm.js`: Overpass query/fetch (with fallback server), parsing to a shared-node network, trail/road
     layers, junction splitting and the first-pass draft (`draftNetwork`).
   - `js/elevation.js`: elevations from HRDEM LiDAR (geotiff.js range reads, EPSG:3979) with AWS Terrain Tiles
@@ -54,7 +54,7 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
   (`tests/fixtures/burnaby-legacy.json`, frozen; the other tests use it as a reference network too).
 - `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`, `tests/area-package.test.mjs`,
   `tests/gpx.test.mjs`: the area-setup modules.
-  `tests/fixtures/synthetic-expected.json` was made by the old Python build (command in the test file).
+  `tests/fixtures/synthetic-input.json` is a small made-up network; `synthetic-expected.json` is its build output.
 
 ## Commands
 

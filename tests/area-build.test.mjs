@@ -1,28 +1,39 @@
-// Area build tests: the JS port gives the same routing data the Python build (scripts/build_router_data.py, removed;
-// see git history) gave for the same input.
+// Area build tests. Run with: npm test
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { buildRouterData, inputFromEditor, pyRound } from '../site/js/area-build.js';
+import { buildRouterData } from '../site/js/area-build.js';
 
 const load = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
 
 // Small made-up network that exercises every step: a near-miss snap, a dead end closed by a short extra,
 // an island joined through a 50 m extra (splitting the segment it lands on), and a far island that is dropped.
-// Expected output made with the removed Python build:
-//   python3 scripts/build_router_data.py --editor tests/fixtures/synthetic-editor.json \
-//     --curated tests/fixtures/synthetic-curated.json --out tests/fixtures/synthetic-expected.json --version test
-test('synthetic network: same output as the Python build', () => {
-  const { data, report } = buildRouterData(inputFromEditor(load('fixtures/synthetic-curated.json'), load('fixtures/synthetic-editor.json')), { version: 'test' });
+// The expected output was first made by the old Python build and still matches it.
+test('synthetic network: snaps, closes, joins and drops as expected', () => {
+  const { data, report } = buildRouterData(load('fixtures/synthetic-input.json'), { version: 'test' });
   assert.deepEqual(data, load('fixtures/synthetic-expected.json'));
+  assert.deepEqual(report.closed.map(a => a.extra), [0]);
   assert.deepEqual(report.autoAdded.map(a => a.extra), [1]);
   assert.deepEqual(report.dropped.names, ['Far loop']);
 });
 
-test('pyRound matches Python round() on ties', () => {
-  assert.equal(pyRound(0.125, 2), 0.12);   // exact binary tie: half to even
-  assert.equal(pyRound(0.375, 2), 0.38);
-  assert.equal(pyRound(2.675, 2), 2.67);   // 2.675 is really 2.67499999...
-  assert.equal(pyRound(-1.25, 1), -1.2);
-  assert.equal(pyRound(123.0, 1), 123);
+test('output coordinates are rounded to 6 places, elevations to 1', () => {
+  const { data } = buildRouterData(load('fixtures/synthetic-input.json'));
+  for (const [lat, lon, ele] of data.nodes) {
+    assert.equal(lat, Number(lat.toFixed(6))); assert.equal(lon, Number(lon.toFixed(6)));
+    if (ele != null) assert.equal(ele, Number(ele.toFixed(1)));
+  }
+});
+
+test('an island joins through the shortest connector', () => {
+  // the island (3-4) can reach the loop at node 1 by a 60 m extra from node 3 or a 35 m extra from node 4
+  const seg = (id, path, name) => ({ id, path, name, kind: 'trail', grade: null, gradeDown: null, oneway: 'no' });
+  const { report } = buildRouterData({
+    nodes: [[49.28, -122.92, 0], [49.28, -122.919, 0], [49.2805, -122.9195, 0], [49.27946, -122.919, 0], [49.28, -122.918518, 0]],
+    segs: [seg('m1', [0, 1], 'Loop'), seg('m2', [1, 2], 'Loop'), seg('m3', [2, 0], 'Loop'), seg('i', [3, 4], 'Island')],
+    trailheads: [{ node: 0, name: 'Lot' }],
+    extras: [{ p: [3, 1], osm: { name: 'Long way' } }, { p: [4, 1], osm: { name: 'Short way' } }],
+  });
+  assert.deepEqual(report.autoAdded.map(a => a.name), ['Short way']);
+  assert.equal(report.dropped.segs, 0);
 });

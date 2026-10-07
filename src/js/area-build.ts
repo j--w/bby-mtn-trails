@@ -1,11 +1,11 @@
 // Area build: a curated trail network -> the compact routing graph the route builder loads.
-// Pure functions, no DOM. A port of the old Python build (scripts/build_router_data.py, since removed) that
-// produces the same output for the same input (tests/area-build.test.mjs checks a fixture made with it).
+// Pure functions, no DOM. Started as a port of the old Python build (scripts/build_router_data.py; see git history).
 //
 // Steps: keep the curated segments, join dead ends that nearly touch (< snapTol m), fill dead ends with short
 // unadded extras (<= fillMax m), connect islands through short extras (<= islandMax m in total), split at shared
 // nodes, keep the component that holds the first trailhead, then write nodes/segs/th/ref.
 
+import FlatQueue from 'flatqueue';
 import type { LatLonEle, Oneway, RouterData, SegKind } from './types.js';
 
 const R = 6371000;
@@ -53,7 +53,6 @@ export function buildRouterData(input: BuildInput, opts: BuildOptions = {}): { d
   const N = input.nodes, extras = input.extras || [];
   const th = input.trailheads.map(t => t.node), thSet = new Set(th);
   const lat0 = N[0][0] * Math.PI / 180, cos0 = Math.cos(lat0);
-  // same evaluation order as the Python so lengths match to the last bit
   const X = N.map(n => n[1] * Math.PI / 180 * R * cos0), Y = N.map(n => n[0] * Math.PI / 180 * R);
   const dist = (a: number, b: number) => Math.hypot(X[a] - X[b], Y[a] - Y[b]);
   const len = (p: number[]) => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; };
@@ -66,7 +65,7 @@ export function buildRouterData(input: BuildInput, opts: BuildOptions = {}): { d
   let segs = input.segs.map(s => ({ ...s, path: s.path.slice() }));
   const added = new Set(input.added || []);
   const report = {} as BuildReport;   // filled in step by step below
-  // optionally make a trailhead in the middle of a segment a junction (the Python build expects them at segment ends)
+  // optionally make a trailhead in the middle of a segment a junction (the build expects them at segment ends)
   if (splitAtTrailheads) for (const t of th) {
     const s = segs.find(s => s.path.indexOf(t) > 0 && s.path.indexOf(t) < s.path.length - 1);
     if (s) { const k = s.path.indexOf(t); segs.push({ ...s, path: s.path.slice(k), id: s.id + 't' }); s.path = s.path.slice(0, k + 1); }
@@ -79,8 +78,7 @@ export function buildRouterData(input: BuildInput, opts: BuildOptions = {}): { d
   };
 
   // join dead ends that sit within a few metres of another segment (OSM ways that nearly touch)
-  // A grid of snapTol cells finds the candidates; picking the smallest distance, ties to the earliest
-  // segment and node, gives the same answer as the Python's scan of every node.
+  // A grid of snapTol cells finds the candidates; the smallest distance wins, ties to the earliest segment and node.
   report.snapped = [];
   const cell = snapTol, grid = new Map<string, Array<[number, number, number]>>(), cellKey = (cx: number, cy: number) => cx + ',' + cy;
   const addToGrid = (j: number, path: number[]) => path.forEach((n, k) => {
@@ -116,18 +114,16 @@ export function buildRouterData(input: BuildInput, opts: BuildOptions = {}): { d
   }
 
   // close dead ends with a short unadded extra that leads to another part of the network
-  // (like the Python, this pass keeps its own copy of `added`; the island pass below doesn't see these)
   report.closed = [];
-  const closedSet = new Set(added);
   for (let round = 0; round < 3; round++) {
     const deg = degrees(), netn = new Set<number>();
     for (const s of segs) for (const n of s.path) netn.add(n);
     let made = false;
     extras.forEach((e, i) => {
-      if (closedSet.has(i) || len(e.p) > fillMax) return;
+      if (added.has(i) || len(e.p) > fillMax) return;
       const a = first(e.p), b = last(e.p);
       if ((deg.get(a) === 1 && netn.has(b)) || (deg.get(b) === 1 && netn.has(a))) {
-        segs.push(extraSeg(i, e)); closedSet.add(i);
+        segs.push(extraSeg(i, e)); added.add(i);
         report.closed.push({ extra: i, name: e.osm?.name || e.osm?.via || null, m: len(e.p) }); made = true;
       }
     });
@@ -154,17 +150,19 @@ export function buildRouterData(input: BuildInput, opts: BuildOptions = {}): { d
       const src = new Set<number>();
       segs.forEach((s, j) => { if (comp[j] === c) s.path.forEach(n => src.add(n)); });
       const srcList = [...src].sort((a, b) => a - b);
-      const pq = srcList.map((n): HeapItem => [0, 0, n]), prev = new Map<number, [number, number | null] | null>(srcList.map(n => [n, null])), done = new Set<number>();
+      // shortest path to the main network; extras cost 3x so paths along the existing network win
+      const pq = new FlatQueue<number>(), cost = new Map<number, number>(), prev = new Map<number, [number, number | null] | null>(), done = new Set<number>();
+      for (const n of srcList) { pq.push(n, 0); cost.set(n, 0); prev.set(n, null); }
       let hit: number | null = null;
       while (pq.length) {
-        const [cost, d, u] = heapPop(pq);
+        const u = pq.pop()!;
         if (done.has(u)) continue;
         done.add(u);
         if (mainNodes.has(u)) { hit = u; break; }
         for (const [v, dd, tag] of G.get(u) || []) {
           if (done.has(v)) continue;
-          heapPush(pq, [cost + dd * (tag === null ? 1 : 3), d + dd, v]);
-          if (!prev.has(v)) prev.set(v, [u, tag]);
+          const c = cost.get(u)! + dd * (tag === null ? 1 : 3);
+          if (c < (cost.get(v) ?? Infinity)) { cost.set(v, c); prev.set(v, [u, tag]); pq.push(v, c); }
         }
       }
       if (hit === null) continue;
@@ -194,30 +192,18 @@ export function buildRouterData(input: BuildInput, opts: BuildOptions = {}): { d
   const used = [...new Set(keep.flatMap(s => s.path))].sort((a, b) => a - b), idx = new Map(used.map((k, i) => [k, i]));
   const outSegs = keep.map(s => ({ p: s.path.map(x => idx.get(x)!), n: s.name || '', k: s.kind, g: s.grade ?? null, gd: s.gradeDown ?? null, o: s.oneway ?? 'no' }));
   const thOut = input.trailheads.slice().sort((a, b) => (N[a.node][2] ?? 0) - (N[b.node][2] ?? 0)).map(t => ({ node: idx.get(t.node)!, name: t.name }));
-  const nodes = used.map((k): LatLonEle => [pyRound(N[k][0], 6), pyRound(N[k][1], 6), N[k][2] == null ? null : pyRound(N[k][2], 1)]);
+  const nodes = used.map((k): LatLonEle => [fixed(N[k][0], 6), fixed(N[k][1], 6), N[k][2] == null ? null : fixed(N[k][2], 1)]);
   const lats = nodes.map(n => n[0]), lons = nodes.map(n => n[1]), pad = 0.004;
   const bb = [Math.min(...lats) - pad, Math.max(...lats) + pad, Math.min(...lons) - pad * 1.5, Math.max(...lons) + pad * 1.5];
   const ref: RefLine[] = [];
   for (const w of input.ref || []) {
-    if (w.c.some(([x, y]) => bb[2] <= x && x <= bb[3] && bb[0] <= y && y <= bb[1])) ref.push({ c: w.c.map(([x, y]): [number, number] => [pyRound(x, 5), pyRound(y, 5)]), k: w.k });
+    if (w.c.some(([x, y]) => bb[2] <= x && x <= bb[3] && bb[0] <= y && y <= bb[1])) ref.push({ c: w.c.map(([x, y]): [number, number] => [fixed(x, 5), fixed(y, 5)]), k: w.k });
   }
   return { data: { nodes, segs: outSegs, th: thOut, ref, version }, report };
 }
 
-// Adapter for the old editor's files (its Export JSON + base data); the synthetic test fixtures use this format.
-export interface EditorFile { _editor: { segs: BuildSeg[]; added?: number[]; nodes: Record<string, { type?: string; name: string }> } }
-export interface EditorBase { nodes: LatLonEle[]; extras: Extra[]; ref: RefLine[] }
-export function inputFromEditor(curated: EditorFile, editorBase: EditorBase): BuildInput {
-  const S = curated._editor;
-  return {
-    nodes: editorBase.nodes, segs: S.segs, extras: editorBase.extras, added: S.added || [], ref: editorBase.ref,
-    trailheads: Object.entries(S.nodes).filter(([, v]) => v.type === 'trailhead').map(([k, v]) => ({ node: Number(k), name: v.name })),
-  };
-}
-
-// Split segments at interior nodes that are another segment's endpoint. One pass gives the same result
-// (and order) as the Python's restart-after-each-split loop: a split never adds a new endpoint, and the
-// tail it appends is checked when the pass reaches it.
+// Split segments at interior nodes that are another segment's endpoint. One pass is enough: a split never adds
+// a new endpoint, and the tail it appends is checked when the pass reaches it.
 export function splitAll(segs: BuildSeg[]): BuildSeg[] {
   const ends = new Set(segs.flatMap(s => [s.path[0], s.path[s.path.length - 1]]));
   for (let i = 0; i < segs.length; i++) {
@@ -248,38 +234,5 @@ export function components(segs: Array<{ path: number[] }>): { comp: number[]; a
   return { comp, adj };
 }
 
-// Binary heap of [cost, dist, node] tuples, ordered like Python's heapq (ties broken by the next field).
-type HeapItem = [number, number, number];
-const less = (a: HeapItem, b: HeapItem) => a[0] !== b[0] ? a[0] < b[0] : a[1] !== b[1] ? a[1] < b[1] : a[2] < b[2];
-function heapPush(h: HeapItem[], item: HeapItem) {
-  let pos = h.length; h.push(item);
-  while (pos > 0) { const p = (pos - 1) >> 1; if (!less(item, h[p])) break; h[pos] = h[p]; pos = p; }
-  h[pos] = item;
-}
-function heapPop(h: HeapItem[]): HeapItem {
-  const lastItem = h.pop()!;
-  if (!h.length) return lastItem;
-  const top = h[0];
-  // Python's _siftup: walk the smaller child to a leaf, then sift the moved item back up
-  let pos = 0; const end = h.length;
-  let child = 1;
-  while (child < end) { const r = child + 1; if (r < end && !less(h[child], h[r])) child = r; h[pos] = h[child]; pos = child; child = 2 * pos + 1; }
-  h[pos] = lastItem;
-  while (pos > 0) { const p = (pos - 1) >> 1; if (!less(lastItem, h[p])) break; h[pos] = h[p]; pos = p; }
-  h[pos] = lastItem;
-  return top;
-}
-
-// Python's round(x, nd): round half to even on the exact binary value.
-export function pyRound(x: number, nd: number): number {
-  const exact = Math.abs(x).toFixed(Math.min(100, nd + 60));
-  const [ip, fp] = exact.split('.');
-  const keep = fp.slice(0, nd), rest = fp.slice(nd);
-  const half = '5'.padEnd(rest.length, '0');
-  let up = rest > half || (rest === half && Number((nd ? keep : ip).slice(-1)) % 2 === 1);
-  const digits = ip + keep;
-  let n = BigInt(digits) + (up ? 1n : 0n);
-  const s = n.toString().padStart(nd + 1, '0');
-  const v = Number(nd ? s.slice(0, -nd) + '.' + s.slice(-nd) : s);
-  return x < 0 ? -v : v;
-}
+// x to nd decimal places (nearest, on the exact binary value).
+const fixed = (x: number, nd: number): number => Number(x.toFixed(nd));
