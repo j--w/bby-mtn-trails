@@ -22,7 +22,9 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
     (map, controls, results, elevation profile, GPX; search runs in a blob module worker that imports
     `js/router-core.js`, so it works cross-origin). `setup-widget.js` exports `mountSetup(el, options)`, area setup
     (tracks from the host, `onCoverage`, `onAreaSaved`; compiling runs in a blob module worker that imports
-    `js/area-worker.js`). They're separate so route-only pages don't load setup. `common.js` has what both share
+    `js/area-worker.js`). They're separate so route-only pages don't load setup. Each widget keeps its state in
+    its mount function and renders the panel with Preact (`htm` templates) on every change (`paint()`); the map is
+    plain Leaflet, driven directly. `common.js` has what both share
     (Leaflet loading: the host page's `window.L` if it has one, else the npm copy bundled in `leaflet.js`, with its CSS; the theme tokens and base CSS, scoped under `.tw`).
     `model.js` holds the route builder's DOM-free parts (params, trailheads, `toRoute`, GPX). The exported types (generated
     into `trails-widget.d.ts` and `setup-widget.d.ts`, doc comments included) are the public contract: keep them

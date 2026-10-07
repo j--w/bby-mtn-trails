@@ -1,7 +1,10 @@
 // Area setup widget. mountSetup(element, options) puts area setup (pick a box, load OpenStreetMap trails and
 // elevations, curate, save) inside one element. The finished area goes to onAreaSaved, or downloads as a file.
 // The public types below (with their docs) are the v1 contract; tsc emits them as setup-widget.d.ts.
+// The panel is Preact (htm templates) rendered from the state in mountSetup(); the map is Leaflet, driven directly.
 import type * as Leaflet from 'leaflet';
+import { render as renderUi } from 'preact';
+import { html } from 'htm/preact';
 import { loadLeaflet, addStyles, baseLayers, esc, themeOf, download } from './common.js';
 import { WidgetError, readArea } from './model.js';
 import type { AreaPackage } from './model.js';
@@ -93,6 +96,8 @@ type Step = 'area' | 'trails' | 'save';
 // a tap near a piece: segment k of its path, t along it, node the nearer end
 interface Hit { d: number; piece: Piece; k: number; t: number; node: number }
 interface SetupState {
+  showSugg: boolean; showRoads: boolean; hint: string; busy: string; toast: string; canLoad: boolean; saving: boolean;
+  resume: { label: string; go: () => void } | null;
   step: Step; bbox: BBox | null; raw: RawNetwork | null; view: RawNetwork | null; keyIdx: Map<string, number> | null; focus: string | null;
   drawPts: DrawPt[]; hostTracks: Track[]; fileTracks: Track[]; match: TrackMatch | null; edits: Edits; name: string;
   ele: { sources: Record<string, number>; missing: number } | null; osmTimestamp: string | null; res: Compiled | null; pieces: Piece[];
@@ -144,82 +149,23 @@ label.tw-btn{cursor:pointer}
 .tws .tw-map.tws-hit{cursor:pointer}
 .tws .leaflet-tooltip.tws-thlab{font-weight:700;font-size:12px;padding:2px 6px}`;
 
-const PANEL = `
-<div class="tw-head"><b>Set up an area</b><span>Pick the trails you run, then build routes on them.</span></div>
-<div class="tws-steps" aria-label="Steps"><span data-el="st-area">1 Area</span>·<span data-el="st-trails">2 Trails</span>·<span data-el="st-save">3 Save</span></div>
-
-<section data-el="p-area" class="tws-stack">
-  <p class="tw-small">Move the map to the trails you want, then mark the area. Keep it to the trail network and a little road around it.</p>
-  <div class="tw-row"><button type="button" class="tw-btn" data-el="draw">Mark two corners</button><button type="button" class="tw-btn" data-el="useview">Use this view</button></div>
-  <p class="tw-small" data-el="areainfo"></p>
-  <div class="tw-notice" data-el="areawarn" hidden></div>
-  <button type="button" class="tw-btn tw-primary" data-el="loadbtn" disabled>Load trails</button>
-  <div class="tw-row">
-    <button type="button" class="tw-btn tw-quiet" data-el="resume" hidden></button>
-    <label class="tw-btn tw-quiet">Open an area file<input type="file" data-el="openfile" accept=".json,application/json" hidden></label>
-  </div>
-</section>
-
-<section data-el="p-trails" class="tws-stack" hidden>
-  <div class="tws-stats">
-    <div class="tws-stat"><b data-el="s-km">0</b><span>km routable</span></div>
-    <div class="tws-stat"><b data-el="s-th">0</b><span>trailheads</span></div>
-    <div class="tws-stat"><b data-el="s-sug">0</b><span>suggestions</span></div>
-  </div>
-  <div class="tw-seg" role="group" aria-label="Tool">
-    <button type="button" data-tool="select" aria-pressed="true">Trails</button>
-    <button type="button" data-tool="trailhead" aria-pressed="false">Trailhead</button>
-    <button type="button" data-tool="split" aria-pressed="false">Split</button>
-    <button type="button" data-tool="join" aria-pressed="false">Join</button>
-    <button type="button" data-tool="draw" aria-pressed="false">Draw</button>
-  </div>
-  <p class="tw-small" data-el="toolhelp"></p>
-  <div class="tw-row" data-el="drawbar" hidden><button type="button" class="tw-btn tw-sm tw-primary" data-el="drawdone" disabled>Finish path</button><button type="button" class="tw-btn tw-sm" data-el="drawback" disabled>Remove last point</button><button type="button" class="tw-btn tw-sm tw-quiet" data-el="drawcancel">Cancel</button></div>
-  <div class="tw-notice" data-el="thwarn" hidden>Add at least one trailhead: pick the Trailhead tool and tap where runs start, or tap a P on the map.</div>
-  <div>
-    <h2 class="tw-title">Trailheads</h2>
-    <div class="tws-list" data-el="thlist"></div>
-  </div>
-  <div data-el="drawnwrap" hidden>
-    <h2 class="tw-title">Drawn paths</h2>
-    <div class="tws-list" data-el="drawnlist"></div>
-  </div>
-  <div data-el="gpxwrap">
-    <h2 class="tw-title">GPS tracks</h2>
-    <p class="tw-small" style="margin-bottom:6px" data-el="gpxhelp"></p>
-    <div class="tws-list" data-el="gpxres"></div>
-    <div class="tw-row" style="margin-top:6px" data-el="gpxbtns"><label class="tw-btn tw-sm">Load GPX<input type="file" data-el="gpxfile" accept=".gpx,application/gpx+xml" multiple hidden></label><button type="button" class="tw-btn tw-sm tw-quiet" data-el="gpxclear" hidden>Remove tracks</button></div>
-  </div>
-  <div>
-    <h2 class="tw-title">Suggested connectors</h2>
-    <p class="tw-small" style="margin-bottom:6px">Short road or path links that join trails up. Add the ones you'd run.</p>
-    <div class="tws-list" data-el="sugglist"></div>
-  </div>
-  <label class="tws-check"><input type="checkbox" data-el="showsugg" checked> Show suggestions on the map (tap one to add it)</label>
-  <label class="tws-check"><input type="checkbox" data-el="showroads"> Show roads and sidewalks</label>
-  <div class="tws-legend">
-    <span class="tws-sw" style="border-color:${MC.in}"></span><span>Routable trails</span>
-    <span class="tws-sw" style="border-color:${MC.auto};border-top-style:dashed"></span><span>Added to close a gap</span>
-    <span class="tws-sw" style="border-color:${MC.cut};border-top-style:dotted"></span><span>Chosen, but not joined to a trailhead</span>
-    <span class="tws-sw" style="border-color:${MC.off};border-top-width:2px"></span><span>Not used (tap to add)</span>
-    <span class="tws-sw" style="border-color:${MC.sugg}"></span><span>Suggested connector</span>
-    <span class="tws-sw" style="border-color:${MC.track};border-top-width:2px"></span><span>GPS track (dashed: missing from OpenStreetMap)</span>
-  </div>
-  <div class="tw-row"><button type="button" class="tw-btn" data-el="undo" disabled>Undo</button><button type="button" class="tw-btn" data-el="back1">Change area</button></div>
-  <button type="button" class="tw-btn tw-primary" data-el="tosave">Next: save</button>
-</section>
-
-<section data-el="p-save" class="tws-stack" hidden>
-  <label class="tw-f">Area name<input type="text" data-el="name" maxlength="60" placeholder="e.g. Forest Park trails"></label>
-  <p class="tw-small" data-el="savesum"></p>
-  <div class="tw-notice" data-el="savewarn" hidden></div>
-  <button type="button" class="tw-btn tw-primary" data-el="save" hidden></button>
-  <button type="button" class="tw-btn" data-el="download">Download area file</button>
-  <p class="tw-small">The area file holds your trails, edits and the OpenStreetMap snapshot. Open it here later to keep editing, or share it.</p>
-  <button type="button" class="tw-btn tw-quiet" data-el="back2">Back to trails</button>
-</section>
-
-<p class="tw-credits">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ODbL).</p>`;
+const HELP: Record<Tool, string> = {
+  select: 'Tap a trail to add it or take it out. Grey lines are paths not in your network yet.',
+  trailhead: 'Tap where runs start (or a P on the map). Name them in the list.',
+  split: 'Tap a point on a trail to cut it there, so you can keep only part of it.',
+  join: 'Tap two points to link them with a short straight connector, where OpenStreetMap leaves a gap.',
+  draw: 'Tap along a path OpenStreetMap is missing. Start and end on a trail so it joins up, then tap the last point again or Finish.',
+};
+const TOOLS: Array<[Tool, string]> = [['select', 'Trails'], ['trailhead', 'Trailhead'], ['split', 'Split'], ['join', 'Join'], ['draw', 'Draw']];
+const LEGEND: Array<[string, string]> = [
+  [`border-color:${MC.in}`, 'Routable trails'],
+  [`border-color:${MC.auto};border-top-style:dashed`, 'Added to close a gap'],
+  [`border-color:${MC.cut};border-top-style:dotted`, 'Chosen, but not joined to a trailhead'],
+  [`border-color:${MC.off};border-top-width:2px`, 'Not used (tap to add)'],
+  [`border-color:${MC.sugg}`, 'Suggested connector'],
+  [`border-color:${MC.track};border-top-width:2px`, 'GPS track (dashed: missing from OpenStreetMap)'],
+];
+const inputOf = (e: Event) => e.currentTarget as HTMLInputElement;
 
 /* ---------- mount ---------- */
 /**
@@ -240,15 +186,7 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
   let opts: SetupOptions = { ...options };
   const root = document.createElement('div');
   root.className = 'tw tws';
-  root.innerHTML = `<div class="tw-grid"><div class="tw-panel">${PANEL}</div>
-    <div class="tw-mapcol"><div class="tw-mapwrap"><div class="tw-map" role="region" aria-label="Map"></div>
-      <div class="tws-hint" hidden><span></span></div><div class="tw-busy" hidden></div><div class="tw-toast" role="status" hidden></div></div></div></div>`;
   element.appendChild(root);
-  // everything these look up is in the markup above
-  const q = (sel: string) => root.querySelector<HTMLElement>(sel)!;
-  const $ = (k: string) => q(`[data-el="${k}"]`);
-  const $in = (k: string) => $(k) as HTMLInputElement, $btn = (k: string) => $(k) as HTMLButtonElement;
-  const mapEl = q('.tw-map');
   let destroyed = false, toastT: number | undefined, draftT: number | undefined, compileT: number | undefined;
 
   const fail = (err: WidgetError) => { if (opts.onError) opts.onError(err); else console.warn('[trails-widget]', err.message); };
@@ -256,14 +194,15 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
   const fire = <K extends keyof Callbacks>(name: K, ...a: Parameters<Callbacks[K]>) => {
     try { return (opts[name] as ((...a: Parameters<Callbacks[K]>) => unknown) | undefined)?.(...a); } catch (err) { console.error(err); }
   };
-  function toast(m: string) { const t = q('.tw-toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 3200); }
-  function busy(m: string) { const b = q('.tw-busy'); b.hidden = !m; b.textContent = m || ''; }
-  function hint(m: string) { const h = q('.tws-hint'); h.hidden = !m; h.firstElementChild!.textContent = m || ''; }
+  function toast(m: string) { S.toast = m; paint(); clearTimeout(toastT); toastT = setTimeout(() => { S.toast = ''; paint(); }, 3200); }
+  function busy(m: string) { S.busy = m; paint(); }
+  function hint(m: string) { S.hint = m; paint(); }
   const useDraft = () => opts.draft !== false;
 
   // raw: the OSM network as loaded; view: raw plus drawn paths (what piece paths and node keys refer to)
   // tracks: the host's (opts.tracks) then the runner's GPX files
-  const S: SetupState = { step: 'area', bbox: null, raw: null, view: null, keyIdx: null, focus: null, drawPts: [], hostTracks: toInternal(opts.tracks), fileTracks: [],
+  const S: SetupState = { showSugg: true, showRoads: false, hint: '', busy: '', toast: '', canLoad: false, saving: false, resume: null,
+    step: 'area', bbox: null, raw: null, view: null, keyIdx: null, focus: null, drawPts: [], hostTracks: toInternal(opts.tracks), fileTracks: [],
     match: null, edits: emptyEdits(), name: '', ele: null, osmTimestamp: null, res: null, pieces: [], tool: 'select', undo: [], joinFrom: null, corners: [], picking: false };
   const tracks = () => [...S.hostTracks, ...S.fileTracks];
 
@@ -274,7 +213,7 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
   worker.onmessage = (e: MessageEvent<Compiled>) => {
     const m = e.data;
     if (m.id !== reqId || destroyed) return;
-    busy('');
+    S.busy = '';
     if ('error' in m) { toast('Something went wrong building the network: ' + m.error); return; }
     if (m.pieces) { S.pieces = m.pieces; drawPieces(); matchTracks(); }
     S.res = m;
@@ -287,6 +226,131 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     S.view = withDrawn(S.raw!, S.edits.drawn); S.keyIdx = nodeIndex(S.view);
     compileT = setTimeout(() => { worker.postMessage({ id: ++reqId, edits: S.edits, withPieces: needPieces }); needPieces = false; }, 80);
   }
+
+  /* ----- the panel ----- */
+  const fmtKm = (m: number) => (m / 1000).toFixed(m < 10000 ? 1 : 0);
+  const routable = () => { const r = S.res; return !!(r && !r.provisional && r.data?.th?.length); };
+  function AreaStep() {
+    const km2 = S.bbox ? bboxKm2(S.bbox) : 0;
+    return html`<section data-el="p-area" class="tws-stack" hidden=${S.step !== 'area'}>
+      <p class="tw-small">Move the map to the trails you want, then mark the area. Keep it to the trail network and a little road around it.</p>
+      <div class="tw-row"><button type="button" class="tw-btn" data-el="draw" onClick=${startPicking}>Mark two corners</button><button type="button" class="tw-btn" data-el="useview" onClick=${useView}>Use this view</button></div>
+      <p class="tw-small" data-el="areainfo">${S.bbox ? `${km2.toFixed(1)} km² selected` : ''}</p>
+      <div class="tw-notice" data-el="areawarn" hidden=${km2 <= WARN_KM2}>${km2 > MAX_KM2 ? `That's too big to load (over ${MAX_KM2} km²). Mark a smaller area.` : 'That\'s a big area. It works, but loading and editing will be slower.'}</div>
+      <button type="button" class="tw-btn tw-primary" data-el="loadbtn" disabled=${!S.canLoad} onClick=${() => loadTrails().catch(err => { S.busy = ''; S.canLoad = true; toast(err.message); })}>Load trails</button>
+      <div class="tw-row">
+        ${S.resume && html`<button type="button" class="tw-btn tw-quiet" data-el="resume" onClick=${S.resume.go}>${S.resume.label}</button>`}
+        <label class="tw-btn tw-quiet">Open an area file<input type="file" data-el="openfile" accept=".json,application/json" hidden onChange=${openFile} /></label>
+      </div>
+    </section>`;
+  }
+  function TrailsStep() {
+    const r = S.res;
+    const onNet = new Set<number | undefined>(r && !r.provisional ? r.trailheads.map(t => t.node) : []);
+    const thOk = r ? S.edits.trailheads.filter(t => onNet.has(S.keyIdx!.get(String(t.node)))).length : 0;
+    return html`<section data-el="p-trails" class="tws-stack" hidden=${S.step !== 'trails'}>
+      <div class="tws-stats">
+        <div class="tws-stat"><b data-el="s-km">${r ? fmtKm(r.keptM) : '0'}</b><span>km routable</span></div>
+        <div class="tws-stat"><b data-el="s-th">${thOk}</b><span>trailheads</span></div>
+        <div class="tws-stat"><b data-el="s-sug">${r ? r.suggestions.length : 0}</b><span>suggestions</span></div>
+      </div>
+      <div class="tw-seg" role="group" aria-label="Tool">${TOOLS.map(([t, label]) => html`<button type="button" data-tool=${t} aria-pressed=${String(S.tool === t)} onClick=${() => setTool(t)}>${label}</button>`)}</div>
+      <p class="tw-small" data-el="toolhelp">${HELP[S.tool]}</p>
+      <div class="tw-row" data-el="drawbar" hidden=${S.tool !== 'draw'}><button type="button" class="tw-btn tw-sm tw-primary" data-el="drawdone" disabled=${S.drawPts.length < 2} onClick=${finishDraw}>Finish path</button><button type="button" class="tw-btn tw-sm" data-el="drawback" disabled=${!S.drawPts.length} onClick=${drawBack}>Remove last point</button><button type="button" class="tw-btn tw-sm tw-quiet" data-el="drawcancel" onClick=${drawCancel}>Cancel</button></div>
+      <div class="tw-notice" data-el="thwarn" hidden=${!r || thOk > 0}>Add at least one trailhead: pick the Trailhead tool and tap where runs start, or tap a P on the map.</div>
+      <div><h2 class="tw-title">Trailheads</h2><div class="tws-list" data-el="thlist">${r && html`<${TrailheadList} onNet=${onNet} />`}</div></div>
+      <div data-el="drawnwrap" hidden=${!S.edits.drawn.length}><h2 class="tw-title">Drawn paths</h2><div class="tws-list" data-el="drawnlist"><${DrawnList} /></div></div>
+      <${Gpx} />
+      <div>
+        <h2 class="tw-title">Suggested connectors</h2>
+        <p class="tw-small" style="margin-bottom:6px">Short road or path links that join trails up. Add the ones you'd run.</p>
+        <div class="tws-list" data-el="sugglist">${r && html`<${Suggestions} />`}</div>
+      </div>
+      <label class="tws-check"><input type="checkbox" data-el="showsugg" checked=${S.showSugg} onChange=${(e: Event) => { S.showSugg = inputOf(e).checked; render(); }} /> Show suggestions on the map (tap one to add it)</label>
+      <label class="tws-check"><input type="checkbox" data-el="showroads" checked=${S.showRoads} onChange=${(e: Event) => { S.showRoads = inputOf(e).checked; render(); }} /> Show roads and sidewalks</label>
+      <div class="tws-legend">${LEGEND.map(([style, label]) => html`<span class="tws-sw" style=${style}></span><span>${label}</span>`)}</div>
+      <div class="tw-row"><button type="button" class="tw-btn" data-el="undo" disabled=${!S.undo.length} onClick=${undo}>Undo</button><button type="button" class="tw-btn" data-el="back1" onClick=${() => setStep('area')}>Change area</button></div>
+      <button type="button" class="tw-btn tw-primary" data-el="tosave" onClick=${() => setStep('save')}>Next: save</button>
+    </section>`;
+  }
+  // Name fields are keyed by their saved name, so an edit or undo from elsewhere replaces the field, while typing
+  // (defaultValue) is left alone when something else re-renders.
+  function TrailheadList({ onNet }: { onNet: Set<number | undefined> }) {
+    if (!S.edits.trailheads.length) return html`<p class="tw-small">None yet.</p>`;
+    return S.edits.trailheads.map((t, i) => html`<div class="tws-item" key=${t.node + '|' + t.name}>
+      <input class="tws-inline" type="text" data-th=${i} defaultValue=${t.name} placeholder=${`Trailhead ${i + 1}`} aria-label="Trailhead name"
+        onChange=${(e: Event) => { const v = inputOf(e).value.trim(); edit(ed => { ed.trailheads[i].name = v; }); }} />
+      <button type="button" class="tw-btn tw-quiet tw-sm" data-thdel=${i} aria-label="Remove trailhead" onClick=${() => edit(ed => { ed.trailheads.splice(i, 1); })}>Remove</button>
+      ${!onNet.has(S.keyIdx!.get(String(t.node))) && html`<small class="tw-small" style="grid-column:1/-1">Not on a routable trail</small>`}</div>`);
+  }
+  function DrawnList() {
+    const d = S.edits.drawn;
+    const show = (i: number) => { const { L, map } = M(), ll = S.pieces.filter(p => p.way === d[i].id).flatMap(p => p.path.map(LL)); if (ll.length) map.fitBounds(L.latLngBounds(ll).pad(1.5), { maxZoom: 17 }); };
+    return d.map((p, i) => html`<div class="tws-item" key=${p.id + '|' + p.name}>
+      <input class="tws-inline" type="text" data-dname=${i} defaultValue=${p.name} placeholder=${`Drawn path ${i + 1}`} aria-label="Path name"
+        onChange=${(e: Event) => { const v = inputOf(e).value.trim(); edit(ed => { ed.drawn[i].name = v; }, { pieces: true }); }} />
+      <span class="tw-row"><button type="button" class="tw-btn tw-quiet tw-sm" data-dshow=${i} onClick=${() => show(i)}>Show</button><button type="button" class="tw-btn tw-quiet tw-sm" data-ddel=${i} onClick=${() => edit(ed => { ed.drawn.splice(i, 1); }, { pieces: true })}>Remove</button></span></div>`);
+  }
+  function Suggestions() {
+    const all = S.res!.suggestions, fi = all.findIndex(x => x.id === S.focus);
+    const list = all.slice(0, 8).map((x, i): [Suggestion, number] => [x, i]);
+    if (fi >= 8) list.push([all[fi], fi]);
+    if (!list.length) return html`<p class="tw-small">Nothing to suggest.</p>`;
+    return list.map(([s, i]) => html`<div class=${'tws-item' + (s.id === S.focus ? ' tws-focus' : '')} key=${s.id}>
+      <span class="tws-what">${s.kind === 'island' ? `Join ${fmtKm(s.joins)} km of trail` : 'Link a dead end'}<small>${Math.round(s.m)} m of ${describe(s)}</small></span>
+      <span class="tw-row"><button type="button" class="tw-btn tw-quiet tw-sm" data-show=${i} onClick=${() => { S.focus = s.id; showSuggestion(s); render(); }}>Show</button><button type="button" class="tw-btn tw-sm" data-add=${i} onClick=${() => addSuggestion(i)}>Add</button><button type="button" class="tw-btn tw-quiet tw-sm" data-no=${i} aria-label="Dismiss" onClick=${() => edit(e => { e.dismissed.push(s.id); })}>No</button></span></div>`);
+  }
+  function Gpx() {
+    const files = opts.gpxFiles !== false;
+    const row = (what: string, sub: string, btns: unknown) => html`<div class="tws-item"><span class="tws-what">${what}<small>${sub}</small></span><span class="tw-row">${btns}</span></div>`;
+    let rows: unknown = null;
+    if (S.match) {
+      const c = trackCounts(), gaps = S.match.gaps, gapM = gaps.reduce((s, g) => s + g.m, 0);
+      const add = (list: TrackMatch['followed']) => edit(e => { for (const x of list) e.pieces[x.id] = true; });
+      const show = () => { const { L, map } = M(); map.fitBounds(L.latLngBounds(gaps.flatMap(g => g.pts.map((p): [number, number] => [p.lat, p.lon]))).pad(0.3), { maxZoom: 17 }); };
+      rows = [
+        row(`Follows ${fmtKm(c.all)} km of paths`, c.trailM ? `${fmtKm(c.trailM)} km of trail isn't in your network yet` : 'All of its trail is in your network',
+          c.trailM ? html`<button type="button" class="tw-btn tw-sm" data-gpx="trail" onClick=${() => add(c.offTrail)}>Add</button>` : null),
+        c.roadM ? row(`${fmtKm(c.roadM)} km of road or sidewalk`, 'Your track uses it, but it isn\'t in your network', html`<button type="button" class="tw-btn tw-sm" data-gpx="road" onClick=${() => add(c.offRoad)}>Add</button>`) : null,
+        gaps.length ? row(`${gaps.length} stretch${gaps.length > 1 ? 'es' : ''} OpenStreetMap doesn't have`, `${Math.round(gapM)} m, dashed on the map`,
+          html`<button type="button" class="tw-btn tw-quiet tw-sm" data-gpx="show" onClick=${show}>Show</button><button type="button" class="tw-btn tw-sm" data-gpx="gaps" onClick=${addTrackGaps}>Add</button>`) : null,
+      ];
+    }
+    return html`<div data-el="gpxwrap" hidden=${!files && !S.hostTracks.length}>
+      <h2 class="tw-title">GPS tracks</h2>
+      <p class="tw-small" style="margin-bottom:6px" data-el="gpxhelp">${files ? 'Load GPX files of your runs to add the trails you use and the bits OpenStreetMap is missing. Tracks aren\'t saved in the area file.'
+        : 'Your runs, to add the trails you use and the bits OpenStreetMap is missing.'}</p>
+      <div class="tws-list" data-el="gpxres">${rows}</div>
+      <div class="tw-row" style="margin-top:6px" data-el="gpxbtns" hidden=${!files}><label class="tw-btn tw-sm">Load GPX<input type="file" data-el="gpxfile" accept=".gpx,application/gpx+xml" multiple hidden onChange=${loadGpxFiles} /></label>
+        <button type="button" class="tw-btn tw-sm tw-quiet" data-el="gpxclear" hidden=${!S.fileTracks.length} onClick=${() => { S.fileTracks = []; matchTracks(); render(); }}>Remove tracks</button></div>
+    </div>`;
+  }
+  function SaveStep() {
+    const r = S.res, ok = routable(), nth = r?.data?.th?.length || 0, src = dominantSource();
+    return html`<section data-el="p-save" class="tws-stack" hidden=${S.step !== 'save'}>
+      <label class="tw-f">Area name<input type="text" data-el="name" maxlength="60" placeholder="e.g. Forest Park trails" value=${S.name} onInput=${(e: Event) => { S.name = inputOf(e).value; saveDraft(); }} /></label>
+      <p class="tw-small" data-el="savesum">${r ? `${fmtKm(r.keptM)} km of trail, ${nth} trailhead${nth === 1 ? '' : 's'}. Elevations from ${src === 'hrdem' ? 'LiDAR (HRDEM)' : 'terrain tiles'}; climb is approximate.` : ''}</p>
+      <div class="tw-notice" data-el="savewarn" hidden=${ok}>Add a trailhead on a routable trail before saving.</div>
+      ${opts.onAreaSaved && html`<button type="button" class="tw-btn tw-primary" data-el="save" disabled=${!ok || S.saving} onClick=${save}>${opts.saveLabel || 'Save area'}</button>`}
+      <button type="button" class=${'tw-btn' + (opts.onAreaSaved ? '' : ' tw-primary')} data-el="download" disabled=${!ok} onClick=${downloadPackage}>Download area file</button>
+      <p class="tw-small">The area file holds your trails, edits and the OpenStreetMap snapshot. Open it here later to keep editing, or share it.</p>
+      <button type="button" class="tw-btn tw-quiet" data-el="back2" onClick=${() => setStep('trails')}>Back to trails</button>
+    </section>`;
+  }
+  function App() {
+    const steps: Array<[Step, string]> = [['area', '1 Area'], ['trails', '2 Trails'], ['save', '3 Save']];
+    return html`<div class="tw-grid"><div class="tw-panel">
+        <div class="tw-head" hidden=${opts.panels?.header === false}><b>Set up an area</b><span>Pick the trails you run, then build routes on them.</span></div>
+        <div class="tws-steps" aria-label="Steps">${steps.map(([s, label], i) => html`${i ? '·' : ''}<span data-el=${'st-' + s} aria-current=${S.step === s ? 'step' : undefined}>${label}</span>`)}</div>
+        <${AreaStep} /><${TrailsStep} /><${SaveStep} />
+        <p class="tw-credits">Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ODbL).</p>
+      </div>
+      <div class="tw-mapcol"><div class="tw-mapwrap"><div class="tw-map" role="region" aria-label="Map"></div>
+        <div class="tws-hint" hidden=${!S.hint}><span>${S.hint}</span></div><div class="tw-busy" hidden=${!S.busy}>${S.busy}</div><div class="tw-toast" role="status" hidden=${!S.toast}>${S.toast}</div></div></div></div>`;
+  }
+  function paint() { if (!destroyed) renderUi(html`<${App} />`, root); }
+  paint();
+  const mapEl = root.querySelector<HTMLElement>('.tw-map')!;
 
   /* ----- everything below needs the map ----- */
   let L: typeof Leaflet | null = null, map: Leaflet.Map | null = null, layers: Layers | null = null;
@@ -305,15 +369,14 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
   }, err => { fail(err); });
 
   const LL = (i: number): [number, number] => [S.view!.nodes[i][0], S.view!.nodes[i][1]];
-  const fmtKm = (m: number) => (m / 1000).toFixed(m < 10000 ? 1 : 0);
   function setStep(step: Step) {
     S.step = step;
-    for (const s of ['area', 'trails', 'save'] as const) { $('p-' + s).hidden = s !== step; if (s === step) $('st-' + s).setAttribute('aria-current', 'step'); else $('st-' + s).removeAttribute('aria-current'); }
     layers?.box.eachLayer(l => (l as Leaflet.Path).setStyle?.({ opacity: step === 'area' ? 1 : 0.35, fillOpacity: step === 'area' ? 0.06 : 0 }));
     if (step !== 'area') stopPicking();
     mapEl.classList.toggle('tws-cross', step === 'trails' && S.tool !== 'select');
     if (step === 'trails') setTool(S.tool);
-    else hint('');
+    else S.hint = '';
+    paint();
   }
 
   /* ----- step 1: area ----- */
@@ -322,23 +385,19 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     const bbox = S.bbox = b.map(v => Math.round(v * 1e5) / 1e5) as BBox;
     layers.box.clearLayers();
     L.rectangle([[b[0], b[1]], [b[2], b[3]]], { color: MC.in, weight: 2, fillOpacity: 0.06, interactive: false }).addTo(layers.box);
-    const km2 = bboxKm2(bbox);
-    $('areainfo').textContent = `${km2.toFixed(1)} km² selected`;
-    $('areawarn').hidden = km2 <= WARN_KM2;
-    $('areawarn').textContent = km2 > MAX_KM2 ? `That's too big to load (over ${MAX_KM2} km²). Mark a smaller area.` : 'That\'s a big area. It works, but loading and editing will be slower.';
-    $btn('loadbtn').disabled = km2 > MAX_KM2;
+    S.canLoad = bboxKm2(bbox) <= MAX_KM2;
+    paint();
   }
   function stopPicking() { S.picking = false; S.corners = []; mapEl.classList.remove('tws-picking'); if (S.step === 'area') hint(''); }
-  $('draw').onclick = () => { if (!map) return; S.picking = true; S.corners = []; mapEl.classList.add('tws-picking'); hint('Tap one corner of the area, then the opposite corner.'); };
-  $('useview').onclick = () => {
+  function startPicking() { if (!map) return; S.picking = true; S.corners = []; mapEl.classList.add('tws-picking'); hint('Tap one corner of the area, then the opposite corner.'); }
+  function useView() {
     if (!map) return;
     const b = map.getBounds().pad(-0.04);
     setBox([b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]); stopPicking();
-  };
-  $('loadbtn').onclick = () => loadTrails().catch(err => { busy(''); toast(err.message); $btn('loadbtn').disabled = false; });
+  }
 
   async function loadTrails() {
-    $btn('loadbtn').disabled = true;
+    S.canLoad = false;
     busy('Loading trails from OpenStreetMap…');
     const json = await fetchOsm(S.bbox!, opts.overpass?.length ? { servers: opts.overpass } : {});
     const raw = parseOsm(json);
@@ -390,37 +449,29 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     buildPickGrid();
   }
   function styleFor(p: Piece, state: PieceState | undefined): Leaflet.PathOptions {
-    const showRoads = $in('showroads').checked;
     if (state === 'in') return { color: MC.in, weight: 3.5, opacity: 0.95, dashArray: undefined };
     if (state === 'auto') return { color: MC.auto, weight: 3.5, opacity: 0.95, dashArray: '6 5' };
     if (state === 'cut') return { color: MC.cut, weight: 3, opacity: 0.9, dashArray: '2 5' };
-    if (p.layer === 'road') return { color: MC.road, weight: 2, opacity: showRoads ? 0.9 : 0, dashArray: undefined };
+    if (p.layer === 'road') return { color: MC.road, weight: 2, opacity: S.showRoads ? 0.9 : 0, dashArray: undefined };
     return { color: MC.off, weight: 2, opacity: 0.8, dashArray: undefined };
   }
+  // the map's overlays from the latest compile, then the panel
   function render() {
-    const r = S.res; if (!r || !map) return;
-    const { L, layers } = M();
-    for (const p of S.pieces) lines.get(p.id)?.setStyle(styleFor(p, r.states[p.id]));
-    layers.extra.clearLayers();
-    if ($in('showsugg').checked) for (const s of r.suggestions) for (const id of s.pieces) {
-      const p = S.pieces.find(x => x.id === id), on = s.id === S.focus;
-      if (p) L.polyline(p.path.map(LL), { color: MC.sugg, weight: on ? 9 : 6, opacity: on ? 0.9 : 0.5, interactive: false }).addTo(layers.extra);
+    const r = S.res;
+    if (r && map) {
+      const { L, layers } = M();
+      for (const p of S.pieces) lines.get(p.id)?.setStyle(styleFor(p, r.states[p.id]));
+      layers.extra.clearLayers();
+      if (S.showSugg) for (const s of r.suggestions) for (const id of s.pieces) {
+        const p = S.pieces.find(x => x.id === id), on = s.id === S.focus;
+        if (p) L.polyline(p.path.map(LL), { color: MC.sugg, weight: on ? 9 : 6, opacity: on ? 0.9 : 0.5, interactive: false }).addTo(layers.extra);
+      }
+      for (const [a, b] of [...r.joins, ...r.snaps]) L.polyline([LL(a), LL(b)], { color: MC.ink, weight: 2, dashArray: '2 4', interactive: false }).addTo(layers.extra);
+      if (S.joinFrom != null) L.circleMarker(LL(S.joinFrom), { radius: 7, color: MC.ink, weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(layers.extra);
+      drawTrailheads();
     }
-    for (const [a, b] of [...r.joins, ...r.snaps]) L.polyline([LL(a), LL(b)], { color: MC.ink, weight: 2, dashArray: '2 4', interactive: false }).addTo(layers.extra);
-    if (S.joinFrom != null) L.circleMarker(LL(S.joinFrom), { radius: 7, color: MC.ink, weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(layers.extra);
-    drawTrailheads();
-    const onNet = new Set<number | undefined>(r.provisional ? [] : r.trailheads.map(t => t.node));
-    const thOk = S.edits.trailheads.filter(t => onNet.has(S.keyIdx!.get(String(t.node)))).length;
-    $('s-km').textContent = fmtKm(r.keptM);
-    $('s-th').textContent = String(thOk);
-    $('s-sug').textContent = String(r.suggestions.length);
-    $('thwarn').hidden = thOk > 0;
-    renderThList(onNet);
-    renderSuggestions();
-    renderDrawn();
-    renderGpx();
-    $btn('undo').disabled = !S.undo.length;
-    if (S.step === 'save') renderSave();
+    reportCoverage();
+    paint();
   }
   function drawTrailheads() {
     const { L, layers } = M();
@@ -439,25 +490,6 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
         .on('click', () => addTrailheadNear(L.latLng(p.lat, p.lon), p.name || '')).addTo(layers.poi);
     }
   }
-  function renderThList(onNet: Set<number | undefined>) {
-    const el = $('thlist');
-    if (!S.edits.trailheads.length) { el.innerHTML = '<p class="tw-small">None yet.</p>'; return; }
-    el.innerHTML = S.edits.trailheads.map((t, i) => `<div class="tws-item"><input class="tws-inline" type="text" data-th="${i}" value="${esc(t.name)}" placeholder="Trailhead ${i + 1}" aria-label="Trailhead name">
-      <button type="button" class="tw-btn tw-quiet tw-sm" data-thdel="${i}" aria-label="Remove trailhead">Remove</button>${onNet.has(S.keyIdx!.get(String(t.node))) ? '' : '<small class="tw-small" style="grid-column:1/-1">Not on a routable trail</small>'}</div>`).join('');
-    el.querySelectorAll<HTMLInputElement>('[data-th]').forEach(inp => inp.onchange = () => { edit(e => { e.trailheads[+inp.dataset.th!].name = inp.value.trim(); }); });
-    el.querySelectorAll<HTMLElement>('[data-thdel]').forEach(b => b.onclick = () => edit(e => { e.trailheads.splice(+b.dataset.thdel!, 1); }));
-  }
-  function renderSuggestions() {
-    const el = $('sugglist'), all = S.res!.suggestions, fi = all.findIndex(x => x.id === S.focus);
-    const list = all.slice(0, 8).map((x, i): [Suggestion, number] => [x, i]);
-    if (fi >= 8) list.push([all[fi], fi]);
-    if (!list.length) { el.innerHTML = '<p class="tw-small">Nothing to suggest.</p>'; return; }
-    el.innerHTML = list.map(([s, i]) => `<div class="tws-item${s.id === S.focus ? ' tws-focus' : ''}"><span class="tws-what">${s.kind === 'island' ? `Join ${fmtKm(s.joins)} km of trail` : 'Link a dead end'}<small>${Math.round(s.m)} m of ${esc(describe(s))}</small></span>
-      <span class="tw-row"><button type="button" class="tw-btn tw-quiet tw-sm" data-show="${i}">Show</button><button type="button" class="tw-btn tw-sm" data-add="${i}">Add</button><button type="button" class="tw-btn tw-quiet tw-sm" data-no="${i}" aria-label="Dismiss">No</button></span></div>`).join('');
-    el.querySelectorAll<HTMLElement>('[data-show]').forEach(b => b.onclick = () => { const s = all[+b.dataset.show!]; S.focus = s.id; showSuggestion(s); render(); });
-    el.querySelectorAll<HTMLElement>('[data-add]').forEach(b => b.onclick = () => addSuggestion(+b.dataset.add!));
-    el.querySelectorAll<HTMLElement>('[data-no]').forEach(b => b.onclick = () => { const i = +b.dataset.no!; edit(e => { e.dismissed.push(all[i].id); }); });
-  }
   function showSuggestion(s: Suggestion) {
     const { L, map } = M();
     map.fitBounds(L.latLngBounds(s.pieces.flatMap(id => S.pieces.find(p => p.id === id)?.path.map(LL) || [])).pad(2), { maxZoom: 16 });
@@ -467,18 +499,6 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     const s = S.res!.suggestions[i]; if (!s) return;
     edit(e => { for (const id of s.pieces) e.pieces[id] = true; });
   }
-  function renderDrawn() {
-    const d = S.edits.drawn;
-    $('drawnwrap').hidden = !d.length;
-    $('drawnlist').innerHTML = d.map((p, i) => `<div class="tws-item"><input class="tws-inline" type="text" data-dname="${i}" value="${esc(p.name)}" placeholder="Drawn path ${i + 1}" aria-label="Path name">
-      <span class="tw-row"><button type="button" class="tw-btn tw-quiet tw-sm" data-dshow="${i}">Show</button><button type="button" class="tw-btn tw-quiet tw-sm" data-ddel="${i}">Remove</button></span></div>`).join('');
-    const pathOf = (i: number) => S.pieces.filter(p => p.way === d[i].id).flatMap(p => p.path.map(LL));
-    $('drawnlist').querySelectorAll<HTMLInputElement>('[data-dname]').forEach(inp => inp.onchange = () => edit(e => { e.drawn[+inp.dataset.dname!].name = inp.value.trim(); }, { pieces: true }));
-    $('drawnlist').querySelectorAll<HTMLElement>('[data-dshow]').forEach(b => b.onclick = () => { const { L, map } = M(), ll = pathOf(+b.dataset.dshow!); if (ll.length) map.fitBounds(L.latLngBounds(ll).pad(1.5), { maxZoom: 17 }); });
-    $('drawnlist').querySelectorAll<HTMLElement>('[data-ddel]').forEach(b => b.onclick = () => edit(e => { e.drawn.splice(+b.dataset.ddel!, 1); }, { pieces: true }));
-  }
-  $('showsugg').onchange = () => render();
-  $('showroads').onchange = () => render();
   function describe(s: Suggestion) {
     const kinds = new Set(s.pieces.map(id => S.pieces.find(p => p.id === id)?.hw));
     const names = [...new Set(s.pieces.map(id => S.pieces.find(p => p.id === id)?.name).filter(Boolean))];
@@ -494,27 +514,16 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     compile(pieces);
     saveDraft();
   }
-  $('undo').onclick = () => { if (!S.undo.length) return; S.edits = JSON.parse(S.undo.pop()!); compile(true); saveDraft(); };
-  function saveDraft() { if (!useDraft()) return; clearTimeout(draftT); draftT = setTimeout(() => saveArea('draft-edits', { edits: S.edits, name: S.name }), 400); }
+  function undo() { if (!S.undo.length) return; S.edits = JSON.parse(S.undo.pop()!); compile(true); saveDraft(); }
+  function saveDraft() { if (!useDraft()) return; clearTimeout(draftT); draftT = setTimeout(() => saveArea('draft-edits', { edits: S.edits, name: S.name.trim() }), 400); }
 
-  const HELP: Record<Tool, string> = {
-    select: 'Tap a trail to add it or take it out. Grey lines are paths not in your network yet.',
-    trailhead: 'Tap where runs start (or a P on the map). Name them in the list.',
-    split: 'Tap a point on a trail to cut it there, so you can keep only part of it.',
-    join: 'Tap two points to link them with a short straight connector, where OpenStreetMap leaves a gap.',
-    draw: 'Tap along a path OpenStreetMap is missing. Start and end on a trail so it joins up, then tap the last point again or Finish.',
-  };
   function setTool(t: Tool) {
     S.tool = t; S.joinFrom = null; S.drawPts = []; drawSketch();
-    $('drawbar').hidden = t !== 'draw';
     mapEl.classList.toggle('tws-cross', S.step === 'trails' && t !== 'select');
     if (t === 'draw') map?.doubleClickZoom.disable(); else map?.doubleClickZoom.enable();
-    root.querySelectorAll<HTMLElement>('[data-tool]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tool === t)));
-    $('toolhelp').textContent = HELP[t];
-    hint(t === 'select' ? '' : HELP[t]);
-    if (S.res) render();
+    S.hint = t === 'select' ? '' : HELP[t];
+    render();
   }
-  root.querySelectorAll<HTMLElement>('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool as Tool));
 
   // grid of piece segments in degrees for hit testing taps
   let grid = new Map<string, Array<[number, number]>>(); const GC = 0.002;
@@ -543,9 +552,9 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     if (best) best.node = best.t < 0.5 ? best.piece.path[best.k - 1] : best.piece.path[best.k];
     return best as Hit | null;
   }
-  const suggestionOf = (id: string) => $in('showsugg').checked ? S.res?.suggestions.findIndex(s => s.pieces.includes(id)) ?? -1 : -1;
+  const suggestionOf = (id: string) => S.showSugg ? S.res?.suggestions.findIndex(s => s.pieces.includes(id)) ?? -1 : -1;
   const inSuggestion = (id: string) => suggestionOf(id) >= 0;
-  const visible = (p: Piece) => { const st = S.res?.states[p.id]; return st !== 'off' || p.layer !== 'road' || $in('showroads').checked || inSuggestion(p.id); };
+  const visible = (p: Piece) => { const st = S.res?.states[p.id]; return st !== 'off' || p.layer !== 'road' || S.showRoads || inSuggestion(p.id); };
   const onNetwork = (p: Piece) => S.res?.states[p.id] !== 'off';
 
   function addTrailheadNear(latlng: Leaflet.LatLng, name: string) {
@@ -583,8 +592,8 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
         edit(ed => { ed.splits.push(keyOf(S.view!, n)); ed.pieces[p.id] = included; ed.pieces[`${p.way}/${keyOf(S.view!, n)}`] = included; }, { pieces: true });
       } else if (S.tool === 'join') {
         const hit = pick(e.latlng, 24, visible); if (!hit) return;
-        if (S.joinFrom == null) { S.joinFrom = hit.node; render(); hint('Now tap the point to join it to.'); return; }
-        const a = S.joinFrom, b = hit.node; S.joinFrom = null; hint(HELP.join);
+        if (S.joinFrom == null) { S.joinFrom = hit.node; S.hint = 'Now tap the point to join it to.'; render(); return; }
+        const a = S.joinFrom, b = hit.node; S.joinFrom = null; S.hint = HELP.join;
         if (a === b) { render(); return; }
         edit(ed => { ed.joins.push([keyOf(S.view!, a), keyOf(S.view!, b)]); });
       } else if (S.tool === 'draw') {
@@ -625,14 +634,14 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     return { node: null, ll: latlng };
   }
   function drawSketch() {
-    if (!map) return;
-    const { L, layers } = M();
-    layers.draw.clearLayers();
-    const pts = S.drawPts;
-    if (pts.length > 1) L.polyline(pts.map(p => p.ll), { color: MC.ink, weight: 3, interactive: false }).addTo(layers.draw);
-    pts.forEach(p => L.circleMarker(p.ll, { radius: 5, color: '#fff', weight: 2, fillColor: p.node != null ? MC.in : MC.ink, fillOpacity: 1, interactive: false }).addTo(layers.draw));
-    $btn('drawdone').disabled = pts.length < 2;
-    $btn('drawback').disabled = !pts.length;
+    if (map) {
+      const { L, layers } = M();
+      layers.draw.clearLayers();
+      const pts = S.drawPts;
+      if (pts.length > 1) L.polyline(pts.map(p => p.ll), { color: MC.ink, weight: 3, interactive: false }).addTo(layers.draw);
+      pts.forEach(p => L.circleMarker(p.ll, { radius: 5, color: '#fff', weight: 2, fillColor: p.node != null ? MC.in : MC.ink, fillOpacity: 1, interactive: false }).addTo(layers.draw));
+    }
+    paint();
   }
   const DRAW_STEP = 20;   // metres between points on a drawn path, so its climb comes from the elevation data
   // [{node, ll}] -> a drawn-path entry: straight legs densified, new points given elevations
@@ -671,11 +680,8 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     edit(e => e.drawn.push(entry), { pieces: true });
     if (pts[0].node == null || pts[pts.length - 1].node == null) toast('Drawn. An end that isn’t on a trail is a dead end.');
   }
-  $('drawdone').onclick = finishDraw;
-  const drawBack = () => { S.drawPts.pop(); drawSketch(); };
-  const drawCancel = () => { S.drawPts = []; drawSketch(); layers?.hover.clearLayers(); };
-  $('drawback').onclick = drawBack;
-  $('drawcancel').onclick = drawCancel;
+  function drawBack() { S.drawPts.pop(); drawSketch(); }
+  function drawCancel() { S.drawPts = []; drawSketch(); layers?.hover.clearLayers(); }
   const onKey = (e: KeyboardEvent) => {
     const target = e.target as Element;
     if (S.tool !== 'draw' || S.step !== 'trails' || target.matches?.('input, textarea, select')) return;
@@ -695,7 +701,6 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     layers.track.clearLayers();
     const all = tracks();
     S.match = all.length && S.pieces.length ? matchTrack({ nodes: S.view!.nodes, pieces: S.pieces, tracks: all, bbox: S.bbox }) : null;
-    $('gpxclear').hidden = !S.fileTracks.length;
     for (const t of all) L.polyline(t.pts.map((p): [number, number] => [p[0], p[1]]), { color: MC.track, weight: 2.5, opacity: 0.8, interactive: false }).addTo(layers.track);
     for (const g of S.match?.gaps || []) L.polyline(g.pts.map((p): [number, number] => [p.lat, p.lon]), { color: MC.track, weight: 6, opacity: 0.7, dashArray: '8 6', interactive: false }).addTo(layers.track);
   }
@@ -704,27 +709,8 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     const offTrail = f.filter(x => x.layer === 'trail' && st[x.id] === 'off'), offRoad = f.filter(x => x.layer === 'road' && st[x.id] === 'off');
     return { all: sum(f), offTrail, offRoad, trailM: sum(offTrail), roadM: sum(offRoad) };
   }
-  let lastCoverage = 'null';
-  function renderGpx() {
-    const el = $('gpxres'), files = opts.gpxFiles !== false;
-    $('gpxbtns').hidden = !files;
-    $('gpxwrap').hidden = !files && !S.hostTracks.length;
-    $('gpxhelp').textContent = files ? 'Load GPX files of your runs to add the trails you use and the bits OpenStreetMap is missing. Tracks aren\'t saved in the area file.'
-      : 'Your runs, to add the trails you use and the bits OpenStreetMap is missing.';
-    reportCoverage();
-    if (!S.match) { el.innerHTML = ''; return; }
-    const c = trackCounts(), gaps = S.match.gaps, gapM = gaps.reduce((s, g) => s + g.m, 0);
-    const row = (what, sub, btns) => `<div class="tws-item"><span class="tws-what">${what}<small>${sub}</small></span><span class="tw-row">${btns}</span></div>`;
-    el.innerHTML =
-      row(`Follows ${fmtKm(c.all)} km of paths`, c.trailM ? `${fmtKm(c.trailM)} km of trail isn't in your network yet` : 'All of its trail is in your network', c.trailM ? '<button type="button" class="tw-btn tw-sm" data-gpx="trail">Add</button>' : '') +
-      (c.roadM ? row(`${fmtKm(c.roadM)} km of road or sidewalk`, 'Your track uses it, but it isn\'t in your network', '<button type="button" class="tw-btn tw-sm" data-gpx="road">Add</button>') : '') +
-      (gaps.length ? row(`${gaps.length} stretch${gaps.length > 1 ? 'es' : ''} OpenStreetMap doesn't have`, `${Math.round(gapM)} m, dashed on the map`, '<button type="button" class="tw-btn tw-quiet tw-sm" data-gpx="show">Show</button><button type="button" class="tw-btn tw-sm" data-gpx="gaps">Add</button>') : '');
-    const add = (list: TrackMatch['followed']) => edit(e => { for (const x of list) e.pieces[x.id] = true; });
-    const act: Record<string, () => void> = { trail: () => add(c.offTrail), road: () => add(c.offRoad), gaps: addTrackGaps,
-      show: () => { const { L, map } = M(); map.fitBounds(L.latLngBounds(gaps.flatMap(g => g.pts.map((p): [number, number] => [p.lat, p.lon]))).pad(0.3), { maxZoom: 17 }); } };
-    el.querySelectorAll<HTMLElement>('[data-gpx]').forEach(b => b.onclick = act[b.dataset.gpx!]);
-  }
   // onCoverage: what the tracks show about this area, sent when it changes
+  let lastCoverage = 'null';
   function reportCoverage() {
     if (!opts.onCoverage) return;
     let cov: Coverage | null = null;
@@ -752,60 +738,41 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     const b = S.bbox; if (!b || !list.length) return false;
     return !list.flatMap(t => t.pts).some(p => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]);
   }
-  $('gpxfile').onchange = async () => {
-    const inp = $in('gpxfile'), files = [...inp.files!]; inp.value = '';
+  async function loadGpxFiles(e: Event) {
+    const inp = inputOf(e), files = [...inp.files!]; inp.value = '';
     const added: Track[] = [];
     for (const f of files) { try { added.push(...parseGpxRaw(await f.text())); } catch { /* reported below */ } }
     if (!added.length) { toast('No track found in that file.'); return; }
     S.fileTracks.push(...added);
     matchTracks(); render();
     if (tracksOutside(added)) toast('That track is outside this area.');
-  };
-  $('gpxclear').onclick = () => { S.fileTracks = []; matchTracks(); render(); };
-
-  $('back1').onclick = () => setStep('area');
-  $('tosave').onclick = () => { setStep('save'); renderSave(); };
+  }
 
   /* ----- step 3: save ----- */
   function dominantSource() { const s = S.ele?.sources || {}; return (s.hrdem || 0) >= (s['terrain-tiles'] || 0) ? 'hrdem' : 'terrain-tiles'; }
-  const routable = () => { const r = S.res; return !!(r && !r.provisional && r.data?.th?.length); };
-  function renderSave() {
-    const r = S.res, ok = routable(), nth = r?.data?.th?.length || 0;
-    if (document.activeElement !== $('name')) $in('name').value = S.name;
-    const src = dominantSource();
-    $('savesum').textContent = r ? `${fmtKm(r.keptM)} km of trail, ${nth} trailhead${nth === 1 ? '' : 's'}. Elevations from ${src === 'hrdem' ? 'LiDAR (HRDEM)' : 'terrain tiles'}; climb is approximate.` : '';
-    $('savewarn').hidden = ok;
-    $('savewarn').textContent = 'Add a trailhead on a routable trail before saving.';
-    $('save').hidden = !opts.onAreaSaved;
-    $('save').textContent = opts.saveLabel || 'Save area';
-    $('download').classList.toggle('tw-primary', !opts.onAreaSaved);
-    $btn('save').disabled = $btn('download').disabled = !ok;
-  }
-  $('name').oninput = () => { S.name = $in('name').value.trim(); saveDraft(); };
   function buildPackage() {
     const src = dominantSource(), win = SMOOTHING[src];
     const data = smoothAlongSegments(S.res!.data!, win);   // routable() before any save
     const attribution = [S.ele?.sources?.hrdem ? HRDEM_ATTRIBUTION : null, S.ele?.sources?.['terrain-tiles'] ? TERRARIUM_ATTRIBUTION : null].filter((a): a is string => !!a);
-    return makePackage({ name: S.name || 'My trails', bbox: S.bbox!, raw: S.raw!, edits: S.edits, compiled: { data },
+    return makePackage({ name: S.name.trim() || 'My trails', bbox: S.bbox!, raw: S.raw!, edits: S.edits, compiled: { data },
       elevation: { sources: S.ele?.sources, smoothing: win, attribution }, osmTimestamp: S.osmTimestamp });
   }
-  $('download').onclick = () => {
+  function downloadPackage() {
     const pkg = buildPackage(), name = (pkg.name.replace(/[^\w -]/g, '').trim() || 'area').replace(/\s+/g, '-').toLowerCase();
     download(JSON.stringify(pkg), name + '.trails.json', 'application/json');
-  };
-  $('save').onclick = async () => {
-    const b = $btn('save'); b.disabled = true;
+  }
+  async function save() {
+    S.saving = true; paint();
     try { await opts.onAreaSaved?.(buildPackage()); } catch (err) { toast((err as Error)?.message || 'Saving didn’t work.'); }
-    finally { if (!destroyed) b.disabled = !routable(); }
-  };
-  $('back2').onclick = () => setStep('trails');
+    finally { S.saving = false; paint(); }
+  }
 
   /* ----- open an area, or resume the draft ----- */
-  $('openfile').onchange = async () => {
-    const inp = $in('openfile'), f = inp.files![0]; inp.value = '';
+  async function openFile(e: Event) {
+    const inp = inputOf(e), f = inp.files![0]; inp.value = '';
     if (!f) return;
     try { await openPackage(JSON.parse(await f.text())); } catch (err) { toast((err as Error).message || 'That file couldn\'t be read.'); }
-  };
+  }
   async function openPackage(json: unknown) {
     await ready; if (!map || destroyed) return;
     const pkg = readPackageLoose(json);
@@ -844,28 +811,21 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     if (!draft?.raw || destroyed) return;
     const later = await loadArea<Pick<Draft, 'edits' | 'name'>>('draft-edits');
     const name = later?.name || draft.name;
-    $('resume').hidden = false;
-    $('resume').textContent = `Continue ${name || 'your last area'}`;
-    $('resume').onclick = async () => {
+    S.resume = { label: `Continue ${name || 'your last area'}`, go: async () => {
       await ready; if (!map) return;
       S.bbox = draft.bbox; setBox(draft.bbox); S.ele = draft.ele; S.osmTimestamp = draft.osmTimestamp;
       S.edits = { ...emptyEdits(), ...(later?.edits || draft.edits) }; S.name = name || ''; S.undo = [];
       startEditing(draft.raw);
-    };
+    } };
+    paint();
   }
 
-  function applyLayout() {
-    root.dataset.theme = themeOf(opts.theme);
-    q('.tw-head').hidden = opts.panels?.header === false;
-    if (S.res) render(); else renderGpx();
-    if (S.step === 'save') renderSave();
-  }
+  function applyLayout() { root.dataset.theme = themeOf(opts.theme); render(); }
   let resizeT: number | undefined;
   const ro = new ResizeObserver(() => { clearTimeout(resizeT); resizeT = setTimeout(() => map?.invalidateSize(), 100); });
   ro.observe(root);
 
   applyLayout();
-  setStep('area');
   offerResume();
   if (opts.area) openArea(opts.area);
 
@@ -883,7 +843,7 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
       cancelAnimationFrame(hoverRaf);
       document.removeEventListener('keydown', onKey);
       worker.terminate(); URL.revokeObjectURL(workerUrl);
-      map?.remove(); root.remove();
+      map?.remove(); renderUi(null, root); root.remove();
     },
   };
 }
