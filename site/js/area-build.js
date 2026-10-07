@@ -16,7 +16,7 @@ const R = 6371000;
 //   added      [extra index]                             extras the curated network already contains
 //   ref        [{c:[[lon, lat]], k}]                     background reference lines
 export function buildRouterData(input, opts = {}) {
-  const { snapTol = 8, fillMax = 30, islandMax = 80, version = '' } = opts;
+  const { snapTol = 8, fillMax = 30, islandMax = 80, version = '', splitAtTrailheads = false } = opts;
   const N = input.nodes, extras = input.extras || [];
   const th = input.trailheads.map(t => t.node), thSet = new Set(th);
   const lat0 = N[0][0] * Math.PI / 180, cos0 = Math.cos(lat0);
@@ -33,6 +33,11 @@ export function buildRouterData(input, opts = {}) {
   let segs = input.segs.map(s => ({ ...s, path: s.path.slice() }));
   const added = new Set(input.added || []);
   const report = {};
+  // optionally make a trailhead in the middle of a segment a junction (the Python build expects them at segment ends)
+  if (splitAtTrailheads) for (const t of th) {
+    const s = segs.find(s => s.path.indexOf(t) > 0 && s.path.indexOf(t) < s.path.length - 1);
+    if (s) { const k = s.path.indexOf(t); segs.push({ ...s, path: s.path.slice(k), id: s.id + 't' }); s.path = s.path.slice(0, k + 1); }
+  }
 
   const degrees = () => {
     const deg = new Map();
@@ -143,8 +148,8 @@ export function buildRouterData(input, opts = {}) {
   // compact output: renumber the nodes the kept segments use
   const used = [...new Set(keep.flatMap(s => s.path))].sort((a, b) => a - b), idx = new Map(used.map((k, i) => [k, i]));
   const outSegs = keep.map(s => ({ p: s.path.map(x => idx.get(x)), n: s.name || '', k: s.kind, g: s.grade ?? null, gd: s.gradeDown ?? null, o: s.oneway ?? 'no' }));
-  const thOut = input.trailheads.slice().sort((a, b) => N[a.node][2] - N[b.node][2]).map(t => ({ node: idx.get(t.node), name: t.name }));
-  const nodes = used.map(k => [pyRound(N[k][0], 6), pyRound(N[k][1], 6), pyRound(N[k][2], 1)]);
+  const thOut = input.trailheads.slice().sort((a, b) => (N[a.node][2] ?? 0) - (N[b.node][2] ?? 0)).map(t => ({ node: idx.get(t.node), name: t.name }));
+  const nodes = used.map(k => [pyRound(N[k][0], 6), pyRound(N[k][1], 6), N[k][2] == null ? null : pyRound(N[k][2], 1)]);
   const lats = nodes.map(n => n[0]), lons = nodes.map(n => n[1]), pad = 0.004;
   const bb = [Math.min(...lats) - pad, Math.max(...lats) + pad, Math.min(...lons) - pad * 1.5, Math.max(...lons) + pad * 1.5];
   const ref = [];
