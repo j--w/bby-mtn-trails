@@ -1,15 +1,16 @@
 # Trail Route Builder
 
-Generates trail-running loops on a hand-curated trail network (starting with Burnaby Mountain, BC) from a
+Generates trail-running loops on a hand-curated trail network (any area; first built for Burnaby Mountain, BC) from a
 distance and climb target, or as "longest loop" options, and exports GPX. Built for ultramarathon training and a
 local running club. Static site, no server. Areas are set up in the browser from OpenStreetMap
-(`site/setup/`); Burnaby Mountain is one such area file.
+(`site/setup/`) and saved as area files (`.trails.json`); there is no built-in area.
 
 ## Layout
 
 - `site/` is the deployed static site (GitHub Pages serves it from the `gh-pages` branch; `pages.yml` publishes main
   there and `preview.yml` puts each PR at `pr-preview/pr-<number>/`).
-  - `index.html`: route builder UI (one ES module inline script; Leaflet 1.9.4 from cdnjs with OSM/OpenTopoMap tiles for the
+  - `index.html`: route builder UI. Opens `?area=<url of a .trails.json>`, else the last area opened in this browser
+    (IndexedDB `current`), else a start screen (open an area file / set one up) (one ES module inline script; Leaflet 1.9.4 from cdnjs with OSM/OpenTopoMap tiles for the
     map, hand-drawn SVG elevation profile). Grades still drive routing data but are not shown or chosen in the UI;
     new routes allow every vetted trail (maxg 4), and loaded route codes keep their own maxg/late.
   - `js/router-core.js`: route search. Pure functions, no DOM. `buildGraph`, `solve` (target mode),
@@ -26,15 +27,12 @@ local running club. Static site, no server. Areas are set up in the browser from
   - `js/gpx.js`: `parseGpx` and `matchTrack` (which network pieces a GPS track follows, and the stretches it runs
     where the network has nothing, which the setup page adds as drawn paths). Pure.
   - `js/area-worker.js` (module worker, compiles off the main thread) and `js/area-store.js` (IndexedDB: the setup
-    draft and the `current` area the route builder opens with `?area=local`).
+    draft and the `current` area the route builder opens).
   - `setup/index.html`: area setup. Pick a rectangle, load OSM trails and elevations, curate (trails, trailheads,
-    split, join, drawn paths OSM lacks, GPX tracks, connector suggestions), then download the area file or open it in the route builder. The route
-    builder also takes `?area=<url of a .trails.json>`. "Edit Burnaby Mountain" opens the built-in area.
-  - `data/burnaby-mountain.trails.json`: the built-in area the route builder opens with no `?area`. Made on the
-    setup page; to change it, edit it there, download, and commit the file over this one. Don't hand-edit.
+    split, join, drawn paths OSM lacks, GPX tracks, connector suggestions), then download the area file or open it in the route builder.
 - `data/burnaby-mountain/raw/`: OSM Overpass exports and GPX files, used by the tests.
 - `tests/router.test.mjs`: Node tests for the route search, on the old hand-curated Burnaby graph
-  (`tests/fixtures/burnaby-legacy.json`, frozen) so results don't move when the area file changes.
+  (`tests/fixtures/burnaby-legacy.json`, frozen; the other tests use it as a reference network too).
 - `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`, `tests/area-package.test.mjs`,
   `tests/gpx.test.mjs`: the area-setup modules.
   `tests/fixtures/synthetic-expected.json` was made by the old Python build (command in the test file).
@@ -46,8 +44,7 @@ npm test                                   # tests (Node 20+, no dependencies)
 npm run serve                              # http://localhost:8000 (route builder), /setup/ (area setup)
 ```
 
-CI (`.github/workflows/tests.yml`) runs the tests, including a check that the built-in area file's routing graph
-matches its saved edits.
+CI (`.github/workflows/tests.yml`) runs the tests.
 
 ## Rules that matter
 

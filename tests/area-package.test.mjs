@@ -107,12 +107,3 @@ test('a drawn path joins a cut-off trail to the network and can hold a trailhead
   const pkg = readPackage(JSON.parse(JSON.stringify(makePackage({ name: 'T', bbox: [S, W, Nn, E], raw, edits, compiled: c }))));
   assert.deepEqual(compileArea(pkg.osm, pkg.edits).data.th, c.data.th);
 });
-
-test('the built-in Burnaby area file loads, and its routing graph matches its saved edits', () => {
-  const pkg = readPackage(load('../site/data/burnaby-mountain.trails.json'));
-  const c = compileArea(pkg.osm, pkg.edits).data;   // elevations aside: the setup page smooths those after compiling
-  assert.deepEqual(c.segs, pkg.data.segs);
-  assert.deepEqual(c.th, pkg.data.th);
-  assert.deepEqual(c.nodes.map(n => n.slice(0, 2)), pkg.data.nodes.map(n => n.slice(0, 2)));
-  assert.ok(pkg.data.th.length > 0);
-});
