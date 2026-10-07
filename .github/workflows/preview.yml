@@ -1,0 +1,20 @@
+name: PR preview
+# Each pull request gets a copy of site/ at <pages url>/pr-preview/pr-<number>/, linked in a comment on the PR,
+# and removed when the PR closes.
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+permissions:
+  contents: write
+  pull-requests: write
+concurrency: preview-${{ github.ref }}
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rossjrw/pr-preview-action@v1.8.1
+        with:
+          source-dir: site
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview

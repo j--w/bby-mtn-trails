@@ -7,7 +7,8 @@ changing the routing or the data pipeline.
 
 ## Layout
 
-- `site/` is the deployed static site (GitHub Pages serves this folder).
+- `site/` is the deployed static site (GitHub Pages serves it from the `gh-pages` branch; `pages.yml` publishes main
+  there and `preview.yml` puts each PR at `pr-preview/pr-<number>/`).
   - `index.html`: route builder UI (one ES module inline script; Leaflet 1.9.4 from cdnjs with OSM/OpenTopoMap tiles for the
     map, hand-drawn SVG elevation profile). Grades still drive routing data but are not shown or chosen in the UI;
     new routes allow every vetted trail (maxg 4), and loaded route codes keep their own maxg/late.
