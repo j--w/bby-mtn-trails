@@ -69,13 +69,13 @@ test('parsing shares nodes between ways and keeps points of interest', () => {
 test('ways split at junctions; the draft keeps trails and drops short stubs', () => {
   const raw = parseOsm(SAMPLE);
   const pieces = splitWays(raw.ways);
-  assert.deepEqual(pieces.filter(p => p.way === 10).map(p => p.id), ['10.0', '10.1']);
+  assert.deepEqual(pieces.filter(p => p.way === 10).map(p => p.id), ['10/0', '10/1']);   // keys default to node indices
   const d = draftNetwork(raw);
   const byId = Object.fromEntries(d.pieces.map(p => [p.id, p]));
-  assert.ok(byId['10.0'].included && byId['10.1'].included);
-  assert.ok(!byId['11.0'].included);                       // roads start as candidates
-  assert.ok(!byId['14.0'].included && byId['14.0'].stub);  // 11 m dead end
-  assert.deepEqual(d.segs.map(s => s.id), ['10.0', '10.1']);
+  assert.ok(byId['10/1'].included && byId['10/2'].included);
+  assert.ok(!byId['11/5'].included);                       // roads start as candidates
+  assert.ok(!byId['14/2'].included && byId['14/2'].stub);  // 11 m dead end
+  assert.deepEqual(d.segs.map(s => s.id), ['10/1', '10/2']);
   assert.equal(d.extras.length, 4);
   assert.equal(d.segs[0].name, 'Ridge Trail');
 });

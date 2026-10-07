@@ -20,6 +20,13 @@ changing the routing or the data pipeline.
     layers, junction splitting and the first-pass draft (`draftNetwork`).
   - `js/elevation.js`: elevations from HRDEM LiDAR (geotiff.js range reads, EPSG:3979) with AWS Terrain Tiles
     as fallback, and `smoothAlongSegments` so DEM noise doesn't inflate climb.
+  - `js/area-package.js`: area packages (`.trails.json`: OSM snapshot, the user's edits keyed by OSM ids, compiled
+    routing graph). `compileArea`, `suggestConnectors`, `makePackage`, `readPackage`. Pure.
+  - `js/area-worker.js` (module worker, compiles off the main thread) and `js/area-store.js` (IndexedDB: the setup
+    draft and the `current` area the route builder opens with `?area=local`).
+  - `setup/index.html`: area setup. Pick a rectangle, load OSM trails and elevations, curate (trails, trailheads,
+    split, join, connector suggestions), then download the area file or open it in the route builder. The route
+    builder also takes `?area=<url of a .trails.json>`.
   - `editor/index.html`: trail network editor (add/remove/grade segments, mark trailheads, export JSON).
   - `data/burnaby-mountain.json`: compact routing graph the route builder loads. **Generated; don't hand-edit.**
   - `data/burnaby-mountain-editor.json`: editor base data (all nodes, OSM network, optional "extras").
@@ -28,7 +35,8 @@ changing the routing or the data pipeline.
 - `scripts/build_router_data.py`: curated.json + editor base data → `site/data/<area>.json`.
 - `scripts/bootstrap/`: one-off history scripts that made the editor base data. Not part of the normal flow.
 - `tests/router.test.mjs`: Node tests for the route search against the real data.
-- `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`: the new area-setup modules.
+- `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`, `tests/area-package.test.mjs`: the
+  area-setup modules.
   `tests/fixtures/synthetic-expected.json` is made by the Python build; regenerate it the same way if the
   Python build changes (command in the test file).
 

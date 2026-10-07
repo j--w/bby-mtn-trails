@@ -46,24 +46,35 @@ export function buildRouterData(input, opts = {}) {
   };
 
   // join dead ends that sit within a few metres of another segment (OSM ways that nearly touch)
+  // A grid of snapTol cells finds the candidates; picking the smallest distance, ties to the earliest
+  // segment and node, gives the same answer as the Python's scan of every node.
   report.snapped = [];
+  const cell = snapTol, grid = new Map(), cellKey = (cx, cy) => cx + ',' + cy;
+  const addToGrid = (j, path) => path.forEach((n, k) => {
+    const key = cellKey(Math.floor(X[n] / cell), Math.floor(Y[n] / cell));
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push([j, k, n]);
+  });
+  segs.forEach((s, j) => addToGrid(j, s.path));
   for (let round = 0; round < 3; round++) {
     const deg = degrees();
     let made = false;
-    for (const s of segs.slice()) {
+    for (const [si, s] of segs.slice().entries()) {
       for (const end of [first(s.path), last(s.path)]) {
         if (deg.get(end) !== 1 || thSet.has(end)) continue;
         let best = null;
-        for (const t of segs) {
-          if (t === s) continue;
-          for (const n of t.path) {
+        const cx = Math.floor(X[end] / cell), cy = Math.floor(Y[end] / cell);
+        for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+          for (const [j, k, n] of grid.get(cellKey(cx + dx, cy + dy)) || []) {
+            if (j === si) continue;
             const d = dist(end, n);
-            if (d < snapTol && (best === null || d < best.d)) best = { d, n };
+            if (d < snapTol && (best === null || d < best.d || (d === best.d && (j < best.j || (j === best.j && k < best.k))))) best = { d, n, j, k };
           }
         }
         if (best) {
           segs.push({ id: 'snap' + report.snapped.length, path: [end, best.n], name: '', kind: 'connector', grade: null, gradeDown: null, oneway: 'no' });
-          report.snapped.push({ at: N[end].slice(0, 2), m: best.d });
+          addToGrid(segs.length - 1, [end, best.n]);
+          report.snapped.push({ at: N[end].slice(0, 2), m: best.d, nodes: [end, best.n] });
           deg.set(end, deg.get(end) + 1); deg.set(best.n, (deg.get(best.n) || 0) + 1); made = true;
         }
       }
@@ -144,6 +155,7 @@ export function buildRouterData(input, opts = {}) {
   const keep = segs.filter((s, j) => comp[j] === main), drop = segs.filter((s, j) => comp[j] !== main);
   report.kept = { segs: keep.length, m: keep.reduce((s, x) => s + len(x.path), 0) };
   report.dropped = { segs: drop.length, m: drop.reduce((s, x) => s + len(x.path), 0), names: drop.map(s => s.name || '-') };
+  report.keptIds = keep.map(s => s.id); report.droppedIds = drop.map(s => s.id);
 
   // compact output: renumber the nodes the kept segments use
   const used = [...new Set(keep.flatMap(s => s.path))].sort((a, b) => a - b), idx = new Map(used.map((k, i) => [k, i]));
@@ -168,18 +180,15 @@ export function inputFromEditor(curated, editorBase) {
   };
 }
 
-// Split segments at interior nodes that are another segment's endpoint.
+// Split segments at interior nodes that are another segment's endpoint. One pass gives the same result
+// (and order) as the Python's restart-after-each-split loop: a split never adds a new endpoint, and the
+// tail it appends is checked when the pass reaches it.
 export function splitAll(segs) {
-  for (let changed = true; changed;) {
-    changed = false;
-    const ends = new Set(segs.flatMap(s => [s.path[0], s.path[s.path.length - 1]]));
-    outer: for (const s of segs) {
-      for (let k = 1; k < s.path.length - 1; k++) {
-        if (ends.has(s.path[k])) {
-          segs.push({ ...s, path: s.path.slice(k), id: s.id + 'b' });
-          s.path = s.path.slice(0, k + 1); changed = true; break outer;
-        }
-      }
+  const ends = new Set(segs.flatMap(s => [s.path[0], s.path[s.path.length - 1]]));
+  for (let i = 0; i < segs.length; i++) {
+    const s = segs[i];
+    for (let k = 1; k < s.path.length - 1; k++) {
+      if (ends.has(s.path[k])) { segs.push({ ...s, path: s.path.slice(k), id: s.id + 'b' }); s.path = s.path.slice(0, k + 1); break; }
     }
   }
   return segs;

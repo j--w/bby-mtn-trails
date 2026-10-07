@@ -139,7 +139,12 @@ footer a{color:inherit}
       <summary>Load a route code</summary>
       <div class="row" style="margin-top:10px"><input type="text" id="loadcode" placeholder="21-900-0-40-0-1-4821-a" aria-label="Route code to load" style="flex:1;min-width:150px"><button class="button sm" id="load">Load</button></div>
     </details>
-    <footer>Elevations are approximate. Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors.</footer>
+    <details class="more">
+      <summary>Open an area file</summary>
+      <p class="small muted" style="margin:10px 0 6px">A <code>.trails.json</code> file from the <a href="setup/">area setup</a> page.</p>
+      <input type="file" id="areafile" accept=".json,application/json" aria-label="Area file">
+    </details>
+    <footer>Elevations are approximate. Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors. <a href="setup/">Set up your own area</a>.</footer>
   </aside>
   <div class="mapcol">
     <div class="mapwrap">
@@ -155,7 +160,33 @@ footer a{color:inherit}
 
 <script src="js/router-core.js"></script>
 <script type="module">
-const DATA = await fetch('data/burnaby-mountain.json').then(r => r.json());
+/* ---------- area: the built-in Burnaby graph, or one made on the setup page (?area=local, or ?area=<file url>) ---------- */
+import { loadArea, saveArea } from './js/area-store.js';
+import { readPackage } from './js/area-package.js';
+async function loadData(){
+  const q = new URLSearchParams(location.search).get('area');
+  if(!q) return { data: await fetch('data/burnaby-mountain.json').then(r => r.json()), name: 'Burnaby Mountain', short: 'Burnaby Mtn', attribution: [], custom: false };
+  try {
+    const json = q === 'local' ? await loadArea('current') : await fetch(q).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (!json) throw new Error(q === 'local' ? 'nothing saved in this browser yet.' : 'the file couldn’t be read.');
+    const pkg = readPackage(json);
+    return { data: pkg.data, name: pkg.name || 'My area', short: pkg.name || 'Trail', attribution: pkg.attribution.slice(1), custom: true };
+  } catch (err) {
+    document.body.innerHTML = `<p style="padding:24px">Couldn’t open that area: ${(err?.message || 'not found').replace(/</g,'&lt;')} <a href="setup/">Set up an area</a> or <a href="./">use Burnaby Mountain</a>.</p>`;
+    throw err;
+  }
+}
+const AREA = await loadData(), DATA = AREA.data;
+document.title = `${AREA.name} Route Builder`;
+document.querySelector('h1').textContent = `${AREA.name} routes`;
+document.getElementById('areafile').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { const pkg = readPackage(await f.text());
+    if (!await saveArea('current', pkg)) throw new Error('this browser won’t store it');
+    location.href = '?area=local';
+  } catch (err) { toast(`Couldn’t open that file: ${err.message}`); }
+};
+if (AREA.attribution.length) document.querySelector('footer').insertAdjacentText('beforeend', ' ' + AREA.attribution.join('. ') + '.');
 const NS='http://www.w3.org/2000/svg';
 const N=DATA.nodes, R=6371000, lat0=N[0][0]*Math.PI/180;
 const X=N.map(n=>n[1]*Math.PI/180*R*Math.cos(lat0)), Y=N.map(n=>-n[0]*Math.PI/180*R);
@@ -285,11 +316,11 @@ function reachableKm(start, maxg){
 function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
 /* ---------- GPX + share ---------- */
-function routeName(){ const r=routes[sel]; return params.mode==='longest' ? `Burnaby Mtn ${r.label} ${(r.s.dist/1000).toFixed(1)}k` : `Burnaby Mtn ${(r.s.dist/1000).toFixed(1)}k ${Math.round(r.s.gain)}m ${'ABC'[sel]}`; }
+function routeName(){ const r=routes[sel]; return params.mode==='longest' ? `${AREA.short} ${r.label} ${(r.s.dist/1000).toFixed(1)}k` : `${AREA.short} ${(r.s.dist/1000).toFixed(1)}k ${Math.round(r.s.gain)}m ${'ABC'[sel]}`; }
 function gpx(){
   const r=routes[sel]; const nm=esc(routeName());
   const pts=r.geom.pts.map(p=>`<trkpt lat="${N[p.n][0]}" lon="${N[p.n][1]}"><ele>${N[p.n][2]}</ele></trkpt>`).join('\n');
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Burnaby Mountain Route Builder" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${nm}</name></metadata>\n<trk><name>${nm}</name><type>running</type><trkseg>\n${pts}\n</trkseg></trk>\n</gpx>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="${AREA.name} Route Builder" xmlns="http://www.topografix.com/GPX/1/1">\n<metadata><name>${nm}</name></metadata>\n<trk><name>${nm}</name><type>running</type><trkseg>\n${pts}\n</trkseg></trk>\n</gpx>\n`;
 }
 function routeCode(){ const p=params; if(p.mode==='longest') return `L-${p.th}-${p.maxg}-${'abc'[sel]}`; return `${p.D/1000}-${p.E}-${p.th}-${p.maxg}${p.late}-${p.lap}-${p.paved}-${p.seed}-${'abc'[sel]}`; }
 function parseCode(c){
@@ -309,7 +340,7 @@ function renderShare(){
   box.innerHTML = `<h2 class="section-title">Take it with you</h2>
     <div class="row"><button class="button primary" id="dl">Download GPX</button><button class="button" id="copygpx">Copy GPX</button></div>
     <textarea id="gpxtext" readonly hidden aria-label="GPX text"></textarea>
-    <p class="small muted" style="margin-top:12px">Route code. Anyone who loads it gets this exact route.</p>
+    <p class="small muted" style="margin-top:12px">Route code. Anyone who loads it${AREA.custom ? ' with this area file' : ''} gets this exact route.</p>
     <div class="row" style="margin-top:6px"><span class="code" id="code">${routeCode()}</span><button class="button quiet sm" id="copycode">Copy</button></div>`;
   $('dl').onclick=()=>{ const name=routeName().replace(/[^\w .-]/g,''); saveFile(name+'.gpx', gpx(), 'application/gpx+xml'); };
   $('copygpx').onclick=async()=>{
