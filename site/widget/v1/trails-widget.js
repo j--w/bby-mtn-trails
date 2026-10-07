@@ -1,6 +1,7 @@
 // Route builder widget. mount(element, options) puts the route builder (controls, results, map, elevation profile)
 // inside one element and lays it out there: side panel when it's wide, stacked when it's narrow.
 // Types and docs: trails-widget.d.ts. No build step; Leaflet loads from cdnjs if the page hasn't loaded it.
+import { loadLeaflet, addStyles, baseLayers, esc, themeOf, download } from './common.js';
 import { WidgetError, readArea, trailheads, trailheadList, resolveParams, problem, solverParams, toRoute, fmtTime } from './model.js';
 
 export { WidgetError, readArea, trailheads };
@@ -13,26 +14,7 @@ const PAVED_LABELS = { fine: 'Don’t mind', avoid: 'Avoid', 'avoid-strongly': '
 const MC = { ink: '#17202b', net: '#4d5f78', laps: ['#2155cc', '#a85f00', '#7b3fb4', '#1b7f45'] };
 const NS = 'http://www.w3.org/2000/svg';
 
-/* ---------- shared page setup: Leaflet, styles, the router worker ---------- */
-const LEAFLET = {
-  css: ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css', 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY='],
-  js: ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js', 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='],
-};
-let leaflet = null;
-function loadLeaflet() {
-  if (globalThis.L?.map) return Promise.resolve(globalThis.L);
-  if (leaflet) return leaflet;
-  if (!document.querySelector('link[href*="leaflet"]')) {
-    const l = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: LEAFLET.css[0], integrity: LEAFLET.css[1], crossOrigin: 'anonymous' });
-    document.head.appendChild(l);
-  }
-  return leaflet = new Promise((ok, fail) => {
-    const s = Object.assign(document.createElement('script'), { src: LEAFLET.js[0], integrity: LEAFLET.js[1], crossOrigin: 'anonymous' });
-    s.onload = () => ok(globalThis.L); s.onerror = () => { leaflet = null; fail(new WidgetError('map-unavailable', 'The map library couldn’t load.')); };
-    document.head.appendChild(s);
-  });
-}
-
+/* ---------- the router worker and styles ---------- */
 // The search runs in a worker made from a blob, so it works when this module is loaded from another site
 // (a worker script itself must be same-origin; importScripts inside it need not be).
 const CORE = new URL('../../js/router-core.js', import.meta.url).href;
@@ -52,60 +34,22 @@ onmessage = e => {
   }
 };`;
 
-const STYLE_ID = 'trails-widget-v1';
 const CSS = `
-.tw{--accent:var(--tw-accent,#2155cc);--accent-soft:var(--tw-accent-soft,#e9effc);--on-accent:#fff;
-  --bg:#f5f6f8;--surface:#fff;--surface-hover:#fafbfc;--text:#17202b;--muted:#5d6775;--faint:#8a93a0;
-  --border:#dde1e7;--border-strong:#c7cdd5;--grid:#eceff3;--done:#1b7f45;--done-soft:#e5f4ea;--partial:#a85f00;--partial-soft:#fcf0dc;
-  --font:var(--tw-font,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif);--radius:var(--tw-radius,10px);--radius-sm:var(--tw-radius-sm,8px);
-  color-scheme:light;container-type:inline-size;height:100%;min-height:420px;background:var(--bg);color:var(--text);
-  font:15px/1.45 var(--font);-webkit-font-smoothing:antialiased;overflow:hidden;border-radius:inherit}
-.tw[data-theme=dark]{--accent:var(--tw-accent,#7aa2ff);--accent-soft:var(--tw-accent-soft,#1d2a47);--on-accent:#0f141b;
-  --bg:#0f141b;--surface:#171d26;--surface-hover:#1c2330;--text:#e6eaf0;--muted:#9aa4b2;--faint:#6c7685;
-  --border:#2a3240;--border-strong:#3a4454;--grid:#222a36;--done:#5cc98a;--done-soft:#17301f;--partial:#f0a54a;--partial-soft:#3a2a12;color-scheme:dark}
-@media (prefers-color-scheme:dark){.tw[data-theme=auto]{--accent:var(--tw-accent,#7aa2ff);--accent-soft:var(--tw-accent-soft,#1d2a47);--on-accent:#0f141b;
-  --bg:#0f141b;--surface:#171d26;--surface-hover:#1c2330;--text:#e6eaf0;--muted:#9aa4b2;--faint:#6c7685;
-  --border:#2a3240;--border-strong:#3a4454;--grid:#222a36;--done:#5cc98a;--done-soft:#17301f;--partial:#f0a54a;--partial-soft:#3a2a12;color-scheme:dark}}
-.tw *,.tw *::before,.tw *::after{box-sizing:border-box}
-.tw [hidden]{display:none!important}
-.tw button,.tw input,.tw select,.tw textarea{font:inherit;color:inherit}
-.tw :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-.tw p{margin:0}
-.tw-grid{height:100%;display:grid;grid-template-columns:340px minmax(0,1fr)}
 .tw-grid.tw-nopanel{grid-template-columns:minmax(0,1fr)}
-.tw-panel{background:var(--surface);border-right:1px solid var(--border);overflow:auto;padding:18px 18px 24px;display:flex;flex-direction:column;gap:18px;min-width:0}
-.tw-head b{display:block;font-size:18px;line-height:1.25}
-.tw-head span{color:var(--muted);font-size:13px}
-.tw-title{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
-.tw-mapcol{display:grid;grid-template-rows:minmax(0,1fr) auto;min-width:0;min-height:0}
-.tw-mapwrap{position:relative;min-height:0}
-.tw-map{position:absolute;inset:0;background:var(--grid)}
-.tw-map.leaflet-container{font:inherit}
 .tw-profile{border-top:1px solid var(--border);background:var(--surface);padding:8px 12px 6px;position:relative}
 .tw-profile svg{width:100%;height:110px;display:block;touch-action:none}
 .tw-tip{position:absolute;top:6px;right:12px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
-.tw-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;flex:1 1 auto;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);font-weight:500;cursor:pointer}
-.tw-btn:hover{background:var(--surface-hover)}
-.tw-btn:disabled{opacity:.6;cursor:default}
-.tw-btn.tw-primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
-.tw-seg{display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--grid)}
-.tw-seg button{flex:1;min-height:36px;padding:6px 10px;border:0;border-radius:7px;background:none;font-size:14px;color:var(--muted);cursor:pointer;white-space:nowrap}
-.tw-seg button[aria-pressed=true]{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(23,32,43,.12)}
 .tw-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .tw-full{grid-column:1/-1}
-.tw-f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;color:var(--muted)}
-.tw input[type=number],.tw select{font-size:16px;font-weight:400;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-sm);min-height:44px;padding:0 12px;width:100%}
 .tw-unit{position:relative}
 .tw-unit input{padding-right:40px;font-variant-numeric:tabular-nums}
 .tw-unit span{position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;font-weight:400;pointer-events:none}
-.tw-small{font-size:13px;color:var(--muted)}
 .tw-more{border-top:1px solid var(--border);padding-top:10px}
 .tw-more summary{cursor:pointer;font-size:14px;font-weight:600;color:var(--accent);list-style:none}
 .tw-more summary::-webkit-details-marker{display:none}
 .tw-more summary::before{content:"+ "}
 .tw-more[open] summary::before{content:"− "}
 .tw-more .tw-form{margin-top:12px}
-.tw-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .tw-opts{display:grid;gap:8px}
 .tw-opt{display:grid;grid-template-columns:28px minmax(0,1fr) auto;align-items:center;gap:4px 12px;text-align:left;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);width:100%;cursor:pointer}
 .tw-opt:hover{background:var(--surface-hover)}
@@ -117,32 +61,16 @@ const CSS = `
 .tw-chip{display:inline-flex;align-items:center;white-space:nowrap;padding:1px 8px;border-radius:999px;font-size:12px;font-weight:600}
 .tw-chip.ok{background:var(--done-soft);color:var(--done)}
 .tw-chip.off{background:var(--partial-soft);color:var(--partial)}
-.tw-notice{border-radius:var(--radius-sm);padding:10px 12px;font-size:14px;background:var(--partial-soft);color:var(--text);margin-bottom:8px}
-.tw-toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:1000;max-width:calc(100% - 32px);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:var(--radius-sm);font-size:14px;box-shadow:0 6px 20px rgba(23,32,43,.2)}
-.tw-busy{position:absolute;right:12px;bottom:28px;z-index:1000;background:var(--surface);color:var(--text);padding:8px 12px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;box-shadow:0 2px 8px rgba(23,32,43,.15)}
 .tw-fit{position:absolute;left:54px;top:10px;z-index:1000;min-height:34px;padding:0 12px;flex:none;font-size:14px;box-shadow:0 1px 4px rgba(23,32,43,.2)}
 .tw-arrow{width:0;height:0;border-left:9px solid #17202b;border-top:5px solid transparent;border-bottom:5px solid transparent;filter:drop-shadow(0 0 1px #fff)}
-.tw .leaflet-tooltip.tw-startlab{font-weight:700;font-size:12px;padding:2px 6px}
-.tw-credits{margin-top:auto;font-size:12px;color:var(--faint)}
-.tw-credits a{color:inherit}
-@container (max-width:720px){
-  .tw-grid{display:flex;flex-direction:column;height:100%;overflow:auto}
-  .tw-panel{border-right:0;overflow:visible;order:2}
-  .tw-mapcol{order:1;height:min(65vh,460px);min-height:300px;flex:none}
-}
-@media (prefers-reduced-motion:reduce){.tw *{transition:none!important;animation:none!important}}`;
-function addStyles() {
-  if (document.getElementById(STYLE_ID)) return;
-  document.head.appendChild(Object.assign(document.createElement('style'), { id: STYLE_ID, textContent: CSS }));
-}
+.tw .leaflet-tooltip.tw-startlab{font-weight:700;font-size:12px;padding:2px 6px}`;
 
-const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmtKm = m => (m / 1000).toFixed(m < 10000 ? 2 : 1) + ' km';
 
 /* ---------- mount ---------- */
 export function mount(element, options = {}) {
   if (!(element instanceof HTMLElement)) throw new TypeError('mount() needs an element to draw into.');
-  addStyles();
+  addStyles('trails-widget-v1-routes', CSS);
   let opts = { ...options };
   const root = document.createElement('div');
   root.className = 'tw';
@@ -324,9 +252,7 @@ export function mount(element, options = {}) {
     el.querySelector('[data-dl]').onclick = () => {
       const gpx = r.gpx();
       if (opts.onExport) return fire('onExport', r, gpx);
-      const url = URL.createObjectURL(new Blob([gpx], { type: 'application/gpx+xml' }));
-      const a = Object.assign(document.createElement('a'), { href: url, download: `${(area.name + ' ' + r.label).replace(/[^\w .-]/g, '')}.gpx` });
-      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+      download(gpx, `${(area.name + ' ' + r.label).replace(/[^\w .-]/g, '')}.gpx`, 'application/gpx+xml');
     };
     el.querySelector('[data-copy]').onclick = async () => {
       try { await navigator.clipboard.writeText(r.gpx()); toast('GPX copied.'); } catch { toast('Copying isn’t allowed here. Use Download instead.'); }
@@ -344,11 +270,7 @@ export function mount(element, options = {}) {
   const mapReady = loadLeaflet().then(L => {
     if (destroyed) return;
     map = L.map(q('.tw-map'), { zoomSnap: 0.25, preferCanvas: true });
-    const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' });
-    const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM · style © <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' });
-    osm.addTo(map);
-    L.control.layers({ Streets: osm, Topo: topo }, null, { position: 'topright' }).addTo(map);
-    L.control.scale({ imperial: false }).addTo(map);
+    baseLayers(L, map);
     layers = { net: L.layerGroup().addTo(map), th: L.layerGroup().addTo(map), route: L.layerGroup().addTo(map) };
     map.setView([20, 0], 2);
   }, err => fail(err));
@@ -427,7 +349,7 @@ export function mount(element, options = {}) {
 
   function renderAll() { hoverPt = null; renderMap(); renderProfile(); }
   function applyLayout() {
-    root.dataset.theme = opts.theme === 'light' || opts.theme === 'dark' ? opts.theme : 'auto';
+    root.dataset.theme = themeOf(opts.theme);
     q('.tw-profile').hidden = !panelOn('profile');
     q('.tw-head').hidden = opts.panels?.header === false;
     const panelEmpty = !panelOn('results') && opts.controls?.length === 0 && opts.panels?.header === false;

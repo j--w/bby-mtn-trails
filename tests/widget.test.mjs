@@ -88,3 +88,13 @@ test('longest mode names its options', () => {
   assert.deepEqual([...routes.map(r => r.id)].sort(), ['every-trail', 'no-repeats', 'skip-dead-ends']);
   assert.ok(routes.every(r => r.description.length > 0));
 });
+
+test('the setup widget reads GPX into tracks your app could also pass', async () => {
+  const { parseGpx } = await import('../site/widget/v1/setup-widget.js');
+  const tracks = parseGpx(readFileSync(new URL('../data/burnaby-mountain/raw/spiral-of-doom.gpx', import.meta.url), 'utf8'));
+  assert.ok(tracks.length >= 1);
+  const p = tracks[0].points[0];
+  assert.equal(typeof tracks[0].name, 'string');
+  assert.ok(p.length === 2 || p.length === 3);
+  assert.ok(Math.abs(p[0] - 49.27) < 0.1 && Math.abs(p[1] + 122.92) < 0.1, `${p}`);
+});
