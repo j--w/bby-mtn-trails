@@ -1,6 +1,6 @@
 // Area build: a curated trail network -> the compact routing graph the route builder loads.
-// Pure functions, no DOM. A port of scripts/build_router_data.py that produces the same output for the same
-// input (tests/area-build.test.mjs checks this against site/data/burnaby-mountain.json).
+// Pure functions, no DOM. A port of the old Python build (scripts/build_router_data.py, since removed) that
+// produces the same output for the same input (tests/area-build.test.mjs checks a fixture made with it).
 //
 // Steps: keep the curated segments, join dead ends that nearly touch (< snapTol m), fill dead ends with short
 // unadded extras (<= fillMax m), connect islands through short extras (<= islandMax m in total), split at shared
@@ -171,7 +171,7 @@ export function buildRouterData(input, opts = {}) {
   return { data: { nodes, segs: outSegs, th: thOut, ref, version }, report };
 }
 
-// Adapter for today's files: the editor's Export JSON (curated.json) + the editor base data.
+// Adapter for the old editor's files (its Export JSON + base data); the synthetic test fixtures use this format.
 export function inputFromEditor(curated, editorBase) {
   const S = curated._editor;
   return {
