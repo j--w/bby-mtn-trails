@@ -1,5 +1,6 @@
 {
-  // src/ (TypeScript) compiles to site/ next to the HTML; the emitted .js and .d.ts are build output, not committed.
+  // tsc type checks src/ and writes the .d.ts files into site/; scripts/build.mjs (esbuild) writes the .js. Both are
+  // build output, not committed.
   "compilerOptions": {
     "target": "ES2022",
     "module": "ES2022",
@@ -9,6 +10,7 @@
     "rootDir": "src",
     "outDir": "site",
     "declaration": true,
+    "emitDeclarationOnly": true,
     "strict": true,
     "noImplicitAny": false,
     "skipLibCheck": true,

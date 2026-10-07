@@ -2,14 +2,17 @@
 
 Generates trail-running loops on a hand-curated trail network (any area; first built for Burnaby Mountain, BC) from a
 distance and climb target, or as "longest loop" options, and exports GPX. Built for ultramarathon training and a
-local running club. Static site, no server; TypeScript in `src/` compiles with `tsc` into `site/`. Areas are set up in the browser from OpenStreetMap
+local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled with esbuild into `site/`. Areas are set up in the browser from OpenStreetMap
 (`site/setup/`) and saved as area files (`.trails.json`); there is no built-in area.
 
 ## Layout
 
-- `src/` is the TypeScript source: `src/js/*.ts` and `src/widget/v1/*.ts` compile (`npm run build`, plain `tsc`, no
-  bundler) to the same paths under `site/`, as ES modules with `.d.ts` next to them. The emitted `site/js/` and
-  `site/widget/` are build output (gitignored); edit `src/`. Paths below are where the compiled files land.
+- `src/` is the TypeScript source. `npm run build` runs `tsc` (type check, `.d.ts` files only) and then
+  `scripts/build.mjs` (esbuild), which bundles every `src/js/*.ts` and `src/widget/v1/*.ts` to the same path under
+  `site/` as an ES module, resolving npm imports; code shared between modules goes in `site/chunks/`. `site/js/`,
+  `site/widget/` and `site/chunks/` are build output (gitignored); edit `src/`. Paths below are where the built files
+  land. Code that uses `import.meta.url` (the widgets' worker URLs) must stay in the entry module, not code shared
+  into a chunk, or its relative URLs break.
 - `site/` is the deployed static site (GitHub Pages serves it from the `gh-pages` branch; `pages.yml` publishes main
   there and `preview.yml` puts each PR at `pr-preview/pr-<number>/`).
   - `index.html`: the route builder page, a thin consumer of the widget (top bar, start screen). Opens
@@ -20,7 +23,7 @@ local running club. Static site, no server; TypeScript in `src/` compiles with `
     `js/router-core.js`, so it works cross-origin). `setup-widget.js` exports `mountSetup(el, options)`, area setup
     (tracks from the host, `onCoverage`, `onAreaSaved`; compiling runs in a blob module worker that imports
     `js/area-worker.js`). They're separate so route-only pages don't load setup. `common.js` has what both share
-    (Leaflet 1.9.4 from cdnjs, injected if the host lacks it; the theme tokens and base CSS, scoped under `.tw`).
+    (Leaflet loading: the host page's `window.L` if it has one, else the npm copy bundled in `leaflet.js`, with its CSS; the theme tokens and base CSS, scoped under `.tw`).
     `model.js` holds the route builder's DOM-free parts (params, trailheads, `toRoute`, GPX). The exported types (generated
     into `trails-widget.d.ts` and `setup-widget.d.ts`, doc comments included) are the public contract: keep them
     backward compatible within v1 (new optional fields only; breaking changes go in
@@ -56,8 +59,9 @@ local running club. Static site, no server; TypeScript in `src/` compiles with `
 ## Commands
 
 ```bash
-npm install                                # typescript and @types/leaflet (dev only)
-npm run build                              # tsc: type check src/ and emit into site/
+npm install
+npm run build                              # tsc (type check, .d.ts) then esbuild (bundle into site/)
+npm run watch                              # esbuild rebuilds on change (no type check)
 npm test                                   # build, then the Node tests (Node 20+) against the emitted site/ modules
 npm run serve                              # build, then http://localhost:8000 (route builder), /setup/ (area setup)
 ```
@@ -79,8 +83,8 @@ publishing `site/`.
 - Segment kinds: `trail` or `connector` (paved/road/sidewalk, penalised by the "Paved sections" option).
 - Elevations are approximate (HRDEM LiDAR or terrain tiles, smoothed). Don't present climb as exact.
 - Map data is © OpenStreetMap contributors (ODbL). Keep the attribution in the UI and README.
-- Keep it static: the only build step is `tsc` (no bundler, no framework, no backend). Runtime libraries only if
-  they earn it (CDN, pinned version); dev dependencies stay at typescript and @types/leaflet, pinned exactly.
+- Libraries come from npm, pinned exactly, and are bundled; don't load code from CDNs. Load big ones setup only needs
+  (geotiff) with a dynamic `import()` so the route builder doesn't download them.
 
 ## Style
 

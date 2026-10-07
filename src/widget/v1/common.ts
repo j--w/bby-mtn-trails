@@ -1,28 +1,19 @@
-// What the widgets share: Leaflet loading, the theme tokens and base styles (everything scoped under .tw), map
-// layers and small helpers. Hosts restyle both widgets with --tw-accent, --tw-accent-soft, --tw-font, --tw-radius and
+// What the widgets share: Leaflet loading (bundled, see leaflet.ts), the theme tokens and base styles (everything
+// scoped under .tw), map layers and small helpers. Hosts restyle both widgets with --tw-accent, --tw-accent-soft, --tw-font, --tw-radius and
 // --tw-radius-sm on any ancestor.
 import type * as Leaflet from 'leaflet';
 import { WidgetError } from './model.js';
 
-const LEAFLET = {
-  css: ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css', 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY='],
-  js: ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js', 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='],
-};
 type LeafletNS = typeof Leaflet;
 const page = globalThis as { L?: LeafletNS };
 let leaflet: Promise<LeafletNS> | null = null;
+// The page's Leaflet if it has one, else the bundled copy (set as window.L, as Leaflet's own script would).
 export function loadLeaflet(): Promise<LeafletNS> {
   if (page.L?.map) return Promise.resolve(page.L);
-  if (leaflet) return leaflet;
-  if (!document.querySelector('link[href*="leaflet"]')) {
-    const l = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: LEAFLET.css[0], integrity: LEAFLET.css[1], crossOrigin: 'anonymous' });
-    document.head.appendChild(l);
-  }
-  return leaflet = new Promise<LeafletNS>((ok, fail) => {
-    const s = Object.assign(document.createElement('script'), { src: LEAFLET.js[0], integrity: LEAFLET.js[1], crossOrigin: 'anonymous' });
-    s.onload = () => ok(page.L!); s.onerror = () => { leaflet = null; fail(new WidgetError('map-unavailable', 'The map library couldn’t load.')); };
-    document.head.appendChild(s);
-  });
+  return leaflet ||= import('./leaflet.js').then(m => {
+    if (!document.querySelector('link[href*="leaflet"]')) addStyles('tw-leaflet', m.css);
+    return page.L = m.default;
+  }, () => { leaflet = null; throw new WidgetError('map-unavailable', 'The map library couldn’t load.'); });
 }
 
 // Each widget adds its own styles once per page, after the shared ones.
