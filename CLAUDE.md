@@ -14,6 +14,12 @@ changing the routing or the data pipeline.
   - `js/router-core.js`: route search. Pure functions, no DOM. `buildGraph`, `solve` (target mode),
     `solveLongest` (longest-loop mode). Shared by the page, the worker and the tests.
   - `js/router-worker.js`: Web Worker wrapper (`importScripts('router-core.js')`).
+  - `js/area-build.js`: JS port of `build_router_data.py` (`buildRouterData`), same output for the same input.
+    ES module, pure. Groundwork for setting up new areas in the browser.
+  - `js/osm.js`: Overpass query/fetch (with fallback server), parsing to a shared-node network, trail/road
+    layers, junction splitting and the first-pass draft (`draftNetwork`).
+  - `js/elevation.js`: elevations from HRDEM LiDAR (geotiff.js range reads, EPSG:3979) with AWS Terrain Tiles
+    as fallback, and `smoothAlongSegments` so DEM noise doesn't inflate climb.
   - `editor/index.html`: trail network editor (add/remove/grade segments, mark trailheads, export JSON).
   - `data/burnaby-mountain.json`: compact routing graph the route builder loads. **Generated; don't hand-edit.**
   - `data/burnaby-mountain-editor.json`: editor base data (all nodes, OSM network, optional "extras").
@@ -22,6 +28,9 @@ changing the routing or the data pipeline.
 - `scripts/build_router_data.py`: curated.json + editor base data → `site/data/<area>.json`.
 - `scripts/bootstrap/`: one-off history scripts that made the editor base data. Not part of the normal flow.
 - `tests/router.test.mjs`: Node tests for the route search against the real data.
+- `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`: the new area-setup modules.
+  `tests/fixtures/synthetic-expected.json` is made by the Python build; regenerate it the same way if the
+  Python build changes (command in the test file).
 
 ## Commands
 

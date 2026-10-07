@@ -33,8 +33,8 @@ test('Canada Atlas Lambert matches pyproj (EPSG:4326 -> 3979) within 2 m', () =>
   assert.equal(hrdemTileId(...toCanadaLambert(49.278, -122.92)), '2_3');   // the file that covers Burnaby
 });
 
-test('HRDEM source reads the 2 m overview of the right file', async () => {
-  // fake geotiff.js: a 1 m full image and a 2 m overview; elevation = 100 + column of the overview
+test('HRDEM source reads the 4 m overview of the right file', async () => {
+  // fake geotiff.js: a 1 m full image and 2, 4, 8 m overviews; elevation = 100 + column of the image read
   const opened = [];
   const image = (w, res) => ({
     getWidth: () => w, getHeight: () => w, getResolution: () => [res, -res], getGDALNoData: () => -32767,
@@ -45,13 +45,13 @@ test('HRDEM source reads the 2 m overview of the right file', async () => {
       return [a];
     },
   });
-  const geotiff = { fromUrl: async url => { opened.push(url); return { getImageCount: async () => 3, getImage: async k => image(500000 / 2 ** k, 2 ** k) }; } };
+  const geotiff = { fromUrl: async url => { opened.push(url); return { getImageCount: async () => 4, getImage: async k => image(500000 / 2 ** k, 2 ** k) }; } };
   const src = hrdemSource({ geotiff });
   const pts = [[49.278, -122.92], [49.279, -122.921]];
   const ele = await src.sample(pts);
   assert.deepEqual(opened, ['https://canelevation-dem.s3.ca-central-1.amazonaws.com/hrdem-mosaic-1m/2_3-mosaic-1m-dtm.tif']);
   const [x] = toCanadaLambert(...pts[0]);
-  close(ele[0], 100 + ((x + 2000000) / 2 - 0.5), 0.01);
+  close(ele[0], 100 + ((x + 2000000) / 4 - 0.5), 0.01);
 });
 
 test('later sources fill what earlier ones miss', async () => {
