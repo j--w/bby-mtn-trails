@@ -25,7 +25,7 @@ changing the routing or the data pipeline.
   - `js/area-worker.js` (module worker, compiles off the main thread) and `js/area-store.js` (IndexedDB: the setup
     draft and the `current` area the route builder opens with `?area=local`).
   - `setup/index.html`: area setup. Pick a rectangle, load OSM trails and elevations, curate (trails, trailheads,
-    split, join, connector suggestions), then download the area file or open it in the route builder. The route
+    split, join, drawn paths OSM lacks, connector suggestions), then download the area file or open it in the route builder. The route
     builder also takes `?area=<url of a .trails.json>`.
   - `editor/index.html`: trail network editor (add/remove/grade segments, mark trailheads, export JSON).
   - `data/burnaby-mountain.json`: compact routing graph the route builder loads. **Generated; don't hand-edit.**

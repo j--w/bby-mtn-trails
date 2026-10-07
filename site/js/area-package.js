@@ -13,7 +13,26 @@ export const OSM_ATTRIBUTION = 'Map data © OpenStreetMap contributors, ODbL';
 //   joins       [[node key, node key]]   straight links between two nodes (gaps OSM doesn't close)
 //   trailheads  [{node: node key, name}]
 //   dismissed   [suggestion id]          connector suggestions the user said no to
-export const emptyEdits = () => ({ pieces: {}, splits: [], joins: [], trailheads: [], dismissed: [] });
+//   drawn       [{id, name, pts}]        paths OSM doesn't have; each point is a node key (snapped to the
+//                                        network) or [lat, lon, ele]
+export const emptyEdits = () => ({ pieces: {}, splits: [], joins: [], trailheads: [], dismissed: [], drawn: [] });
+
+// The OSM network plus the user's drawn paths, as one raw network. Drawn points get node keys
+// `<path id>.<k>` and drawn paths become trail ways with the path's id, so edits can refer to them like OSM.
+export function withDrawn(raw, drawn = []) {
+  if (!drawn.length) return raw;
+  const idx = nodeIndex(raw), nodes = raw.nodes.slice(), osmNodes = raw.nodes.map((_, i) => raw.osmNodes?.[i] ?? null), ways = raw.ways.slice();
+  for (const d of drawn) {
+    const path = [];
+    d.pts.forEach((pt, k) => {
+      let i = typeof pt === 'string' ? idx.get(pt) : undefined;
+      if (i === undefined && Array.isArray(pt)) { i = nodes.length; nodes.push([pt[0], pt[1], pt[2] ?? null]); osmNodes.push(`${d.id}.${k}`); }
+      if (i !== undefined && i !== path[path.length - 1]) path.push(i);
+    });
+    if (path.length > 1) ways.push({ id: d.id, path, tags: { highway: 'path', name: d.name || '', drawn: 'yes' }, layer: 'trail' });
+  }
+  return { ...raw, nodes, osmNodes, ways };
+}
 
 const R = 6371000;
 function metres(raw) {
@@ -26,6 +45,7 @@ const stripSuffix = id => id.replace(/[bt]+$/, '');
 // Piece states: 'in' (on the routable network), 'cut' (chosen but not connected to a trailhead),
 // 'auto' (pulled in by the build to close a gap), 'off' (not used).
 export function compileArea(raw, edits = emptyEdits(), opts = {}) {
+  raw = withDrawn(raw, edits.drawn);
   const idx = nodeIndex(raw), dist = metres(raw);
   const toIdx = k => idx.get(String(k));
   const breaks = new Set(edits.splits.map(toIdx).filter(i => i !== undefined));
@@ -66,6 +86,7 @@ function largestComponentNode(segs, dist) {
 // of trail it connects, kind:'island'|'dead-end'}], biggest gain first, minus dismissed ones.
 export function suggestConnectors(raw, compiled, edits = emptyEdits(), { maxM = 400, deadEndM = 250 } = {}) {
   if (!compiled.data) return [];
+  raw = withDrawn(raw, edits.drawn);
   const dist = metres(raw);
   const pieces = compiled.pieces;
   const netPieces = pieces.filter(p => p.state === 'in' || p.state === 'auto');
