@@ -193,7 +193,7 @@ const MC = { in: '#2155cc', auto: '#a85f00', cut: '#c2410c', off: '#8a93a0', roa
 // one set of sources so the LiDAR file headers are read once per page
 const ELE_SOURCES = [hrdemSource(), terrariumSource()];
 // raw: the OSM network as loaded; view: raw plus drawn paths (what piece paths and node keys refer to)
-const S = { step: 'area', bbox: null, raw: null, view: null, keyIdx: null, focus: null, advanceAt: null, drawPts: [], edits: emptyEdits(), name: '', ele: null, osmTimestamp: null,
+const S = { step: 'area', bbox: null, raw: null, view: null, keyIdx: null, focus: null, drawPts: [], edits: emptyEdits(), name: '', ele: null, osmTimestamp: null,
   res: null, pieces: [], tool: 'select', undo: [], joinFrom: null, corners: [], picking: false };
 
 /* ---------- map ---------- */
@@ -287,11 +287,6 @@ worker.onmessage = e => {
   if (m.error) { toast('Something went wrong building the network: ' + m.error); return; }
   if (m.pieces) { S.pieces = m.pieces; drawPieces(); }
   S.res = m;
-  if (S.advanceAt != null) {
-    const next = m.suggestions[Math.min(S.advanceAt, m.suggestions.length - 1)];
-    S.advanceAt = null; S.focus = next?.id ?? null;
-    if (next && $('showsugg').checked) showSuggestion(next);
-  }
   render();
 };
 function compile(withPieces = false) {
@@ -378,15 +373,14 @@ function renderSuggestions() {
     <span class="row"><button class="button quiet sm" data-show="${i}">Show</button><button class="button sm" data-add="${i}">Add</button><button class="button quiet sm" data-no="${i}" aria-label="Dismiss">No</button></span></div>`).join('');
   el.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { const s = all[+b.dataset.show]; S.focus = s.id; showSuggestion(s); render(); });
   el.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addSuggestion(+b.dataset.add));
-  el.querySelectorAll('[data-no]').forEach(b => b.onclick = () => { const i = +b.dataset.no; S.advanceAt = i; edit(e => { e.dismissed.push(all[i].id); }); });
+  el.querySelectorAll('[data-no]').forEach(b => b.onclick = () => { const i = +b.dataset.no; edit(e => { e.dismissed.push(all[i].id); }); });
 }
 function showSuggestion(s) {
   map.fitBounds(L.latLngBounds(s.pieces.flatMap(id => S.pieces.find(p => p.id === id)?.path.map(LL) || [])).pad(2), { maxZoom: 16 });
 }
-// add every piece of suggestion i; the next compile moves on to the one after it
+// add every piece of suggestion i
 function addSuggestion(i) {
   const s = S.res.suggestions[i]; if (!s) return;
-  S.advanceAt = i;
   edit(e => { for (const id of s.pieces) e.pieces[id] = true; });
 }
 function renderDrawn() {
