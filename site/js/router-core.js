@@ -192,13 +192,56 @@ function solveLongest(p){
       const {d,prev}=dijkstra(sp(es), start); let best=null,bd=Infinity; for(const v of target.nodes){ const x=d.get(v); if(x!==undefined&&x<bd){bd=x;best=v;} }
       if(best===null) return null; let v=best; while(v!==start){ const [i,u]=prev.get(v); lead.push(i); v=u; }
       lead.reverse(); const entry=best;
-      const leadSet=new Set(lead); const r=eulerRoute(grow(target.edges, es.filter(i=>!leadSet.has(i)), entry), entry); if(!r) return null; // start sits outside the main loop
+      const leadSet=new Set(lead); const rest=es.filter(i=>!leadSet.has(i)); const r=eulerRoute(anneal(grow(target.edges, rest, entry), rest, entry), entry); if(!r) return null; // start sits outside the main loop
       // walk in, loop, walk out the same way
       const inSteps=[]; let cur=start; for(const i of lead){ const e=G.edges[i]; inSteps.push([i, e.a===cur?1:-1]); cur=e.a===cur?e.b:e.a; }
       const outSteps=inSteps.slice().reverse().map(([i,dr])=>[i,-dr]);
       const steps=inSteps.concat(r.steps, outSteps); return {steps, s:stats(steps.map(([e,dir])=>({e,dir})))};
     }
-    return eulerRoute(grow(target.edges, es, start), start);
+    return eulerRoute(anneal(grow(target.edges, es, start), es, start), start);
+  }
+  // Improve an even, connected loop by toggling whole cycles of the network in and out (simulated annealing,
+  // fixed seed). grow() only swaps one path at a time and stalls on networks with many short links; this
+  // can give up some trail to reach a longer loop. Works on chains: runs of trail between branch points.
+  function anneal(cur, all, root){
+    const core=pruneSpurs(all, root), deg=degOf(core);
+    const branch=n=>n===root || deg.get(n)!==2;
+    const A=sp(core), chainOf=new Map(), chains=[];
+    for(const i of core){ if(chainOf.has(i)) continue;
+      // walk both ways from edge i to branch points
+      const e=G.edges[i], es=[i]; let ends=[];
+      for(const [from,to] of [[e.b,e.a],[e.a,e.b]]){ let prevE=i, v=to;
+        while(!branch(v)){ const nx=A.get(v).find(([j])=>j!==prevE); if(!nx||nx[0]===i) break; es.push(nx[0]); prevE=nx[0]; v=nx[1]; }
+        ends.push(v); }
+      const c={es, a:ends[0], b:ends[1], len:es.reduce((s,j)=>s+G.edges[j].len,0)};
+      for(const j of es) chainOf.set(j, chains.length); chains.push(c);
+    }
+    const inS=new Uint8Array(chains.length); let curLen=0;
+    for(const i of cur){ const c=chainOf.get(i); if(c===undefined) return cur; if(!inS[c]){ inS[c]=1; curLen+=chains[c].len; } }
+    if(cur.some(i=>!chains[chainOf.get(i)].es.every(j=>cur.includes(j)))) return cur;
+    // fundamental cycles of a BFS tree over branch points
+    const CA=new Map(); chains.forEach((c,k)=>{ for(const [x,y] of [[c.a,c.b],[c.b,c.a]]){ if(!CA.has(x)) CA.set(x,[]); CA.get(x).push([k,y]); } });
+    if(!CA.has(root)) return cur;
+    const par=new Map([[root,null]]), dep=new Map([[root,0]]), q=[root], tree=new Uint8Array(chains.length);
+    for(let k=0;k<q.length;k++){ const u=q[k]; for(const [c,v] of CA.get(u)) if(!par.has(v)){ par.set(v,[c,u]); dep.set(v,dep.get(u)+1); tree[c]=1; q.push(v); } }
+    const cycles=[];
+    chains.forEach((c,k)=>{ if(tree[k]) return; const cy=[k]; let a=c.a, b=c.b;
+      while(a!==b){ if(dep.get(a)>=dep.get(b)){ cy.push(par.get(a)[0]); a=par.get(a)[1]; } else { cy.push(par.get(b)[0]); b=par.get(b)[1]; } }
+      cycles.push(cy); });
+    if(!cycles.length) return cur;
+    const whole=S=>{ let n=0; for(let k=0;k<S.length;k++) n+=S[k]; if(!n) return false; const seen=new Set([root]), st=[root]; let got=0; const hit=new Uint8Array(S.length);
+      while(st.length){ const u=st.pop(); for(const [c,v] of CA.get(u)||[]){ if(!S[c]) continue; if(!hit[c]){ hit[c]=1; got++; } if(!seen.has(v)){ seen.add(v); st.push(v); } } } return got===n; };
+    const rng=mulberry32(4271), N=40000, T0=3000;
+    let S=inS.slice(), best=inS.slice(), bestLen=curLen, len=curLen;
+    for(let it=0; it<N; it++){
+      const T=T0*(1-it/N)+1, nx=S.slice(); let L=len;
+      for(let j=rng()<0.7?1:2; j>0; j--) for(const c of cycles[Math.floor(rng()*cycles.length)]){ L+=nx[c]?-chains[c].len:chains[c].len; nx[c]^=1; }
+      if(L<len && Math.exp((L-len)/T)<rng()) continue;
+      if(!whole(nx)) continue;
+      S=nx; len=L; if(len>bestLen+1e-6){ bestLen=len; best=S.slice(); }
+    }
+    if(bestLen<=curLen+1e-6) return cur;
+    const out=[]; best.forEach((x,k)=>{ if(x) out.push(...chains[k].es); }); return out;
   }
   // grow an even, connected edge set: swap a shorter in-set path for a longer unused path between the same points
   function grow(cur, all, start){

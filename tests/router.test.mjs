@@ -63,3 +63,13 @@ test('longest-loop mode: valid loops, "No repeats" has none, "Every trail" cover
   while (stack.length) { const u = stack.pop(); for (const t of g.adj[u]) { if (!ok(t.e)) continue; reach.add(t.e); if (!seen.has(t.to)) { seen.add(t.to); stack.push(t.to); } } }
   for (const e of reach) assert.ok(used.has(e), `edge ${e} (${g.edges[e].n || 'unnamed'}) not covered`);
 });
+
+test('longest-loop mode: "No repeats" finds a long loop from every trailhead', () => {
+  // the whole network is ~51 km and the old search found ~35 km; the cycle annealing keeps it there or better
+  for (const s of starts) {
+    const r = solveLongest({ mode: 'longest', start: s, maxg: 4 }).find(x => x.label === 'No repeats');
+    assertClosedLoop(r.steps, s);
+    assert.ok(r.s.dist >= 35000, `${(r.s.dist / 1000).toFixed(1)} km from junction ${s}`);
+    assert.ok(r.s.rep <= 500, 'at most a short way in and out');
+  }
+});
