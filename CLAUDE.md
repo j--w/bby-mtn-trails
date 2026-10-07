@@ -9,13 +9,19 @@ local running club. Static site, no server. Areas are set up in the browser from
 
 - `site/` is the deployed static site (GitHub Pages serves it from the `gh-pages` branch; `pages.yml` publishes main
   there and `preview.yml` puts each PR at `pr-preview/pr-<number>/`).
-  - `index.html`: route builder UI. Opens `?area=<url of a .trails.json>`, else the last area opened in this browser
-    (IndexedDB `current`), else a start screen (open an area file / set one up) (one ES module inline script; Leaflet 1.9.4 from cdnjs with OSM/OpenTopoMap tiles for the
-    map, hand-drawn SVG elevation profile). Grades still drive routing data but are not shown or chosen in the UI;
-    new routes allow every vetted trail (maxg 4), and loaded route codes keep their own maxg/late.
-  - `js/router-core.js`: route search. Pure functions, no DOM. `buildGraph`, `solve` (target mode),
-    `solveLongest` (longest-loop mode). Shared by the page, the worker and the tests.
-  - `js/router-worker.js`: Web Worker wrapper (`importScripts('router-core.js')`).
+  - `index.html`: the route builder page, a thin consumer of the widget (top bar, start screen). Opens
+    `?area=<url of a .trails.json>`, else the last area opened in this browser (IndexedDB `current`), else a start
+    screen (open an area file / set one up).
+  - `widget/v1/`: the embeddable route builder. `trails-widget.js` exports `mount(el, options)` (map, controls,
+    results, elevation profile, GPX; Leaflet 1.9.4 from cdnjs, injected if the host lacks it; CSS scoped under `.tw`;
+    search runs in a blob worker that `importScripts` `js/router-core.js`, so it works cross-origin).
+    `model.js` holds the DOM-free parts (params, trailheads, `toRoute`, GPX). `trails-widget.d.ts` is the public
+    contract: keep it backward compatible within v1 (new optional fields only; breaking changes go in `v2/`).
+    Params are metres; trailhead ids are positions (`lat,lon` to 5 places). Grades still drive routing data but
+    aren't offered: every vetted trail is allowed (maxg 4).
+  - `js/router-core.js`: route search. Pure functions, no DOM, classic script (no exports). `buildGraph`, `solve`
+    (target mode), `solveLongest` (longest-loop mode), `routeGeometry` (route → points with distance and lap),
+    `reachableKm`. Shared by the widget's worker and the tests.
   - `js/area-build.js`: `buildRouterData` (snap near-misses, close dead ends, drop islands) → compact routing
     graph. Port of the old Python build (removed; see git history). ES module, pure.
   - `js/osm.js`: Overpass query/fetch (with fallback server), parsing to a shared-node network, trail/road
@@ -31,6 +37,7 @@ local running club. Static site, no server. Areas are set up in the browser from
   - `setup/index.html`: area setup. Pick a rectangle, load OSM trails and elevations, curate (trails, trailheads,
     split, join, drawn paths OSM lacks, GPX tracks, connector suggestions), then download the area file or open it in the route builder.
 - `data/burnaby-mountain/raw/`: OSM Overpass exports and GPX files, used by the tests.
+- `tests/widget.test.mjs`: the widget's model (params, trailheads, routes, GPX) against a real search.
 - `tests/router.test.mjs`: Node tests for the route search, on the old hand-curated Burnaby graph
   (`tests/fixtures/burnaby-legacy.json`, frozen; the other tests use it as a reference network too).
 - `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`, `tests/area-package.test.mjs`,
@@ -50,9 +57,9 @@ CI (`.github/workflows/tests.yml`) runs the tests.
 
 - Area edits are keyed by OSM ids (`<wayId>/<nodeKey>`); drawn paths append nodes after the OSM ones, so OSM node
   indices never move. Keep it that way.
-- Route search must stay **deterministic for a given seed** (mulberry32): route codes shared with the club
-  rebuild routes from (params, seed). A change to the search changes what old codes produce. Bump the code format
-  or note it in the release if that matters.
+- Route search must stay **deterministic for a given seed** (mulberry32): apps that embed the widget store a
+  route's `params` (seed included) and rebuild it from them. A change to the search changes what stored params
+  produce; note it in the release when it does.
 - Distances are metres, elevations metres. Map projection is equirectangular around the first node; SVG Y is
   negated latitude.
 - Grades: 1 green, 2 blue, 3 black, 4 double black; ungraded counts as 2. `gd` (descending grade) applies when
