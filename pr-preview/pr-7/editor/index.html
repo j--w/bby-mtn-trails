@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>html,body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
+<title>Burnaby Mountain Trail Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&family=Overpass+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: one-screen trail-map workbench — map canvas left, inspector rail right; stacks on phones. */
+:root{
+  --bg:#edf0ea; --surface:#f8faf6; --ink:#1b2620; --muted:#5f6d64; --line:#cfd6cc; --faint:#dde3da;
+  --accent:#e2560f; --accent-soft:#fbe3d4;
+  --g1:#2b8a3e; --g2:#1864ab; --g3:#1b2620; --conn:#8a948d; --unset:#a7b2a9;
+  --s1:#f2d16b; --s2:#f0a33c; --s3:#e5652a; --s4:#c22e2e; --s0:#b9c6bb;
+  --ref-trail:#b4bdb1; --ref-paved:#d3d9d0; --missing:#8b4fc7; --warn:#d9480f; --conn-x:#2f7c8f;
+  --font-ui:"Overpass",ui-sans-serif,system-ui,sans-serif;
+  --font-num:"Overpass Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#111713; --surface:#18201b; --ink:#e3e9e3; --muted:#93a198; --line:#2c3730; --faint:#212a24;
+  --accent:#ff7a33; --accent-soft:#3a2418;
+  --g1:#51cf66; --g2:#4dabf7; --g3:#e3e9e3; --conn:#7c877f; --unset:#56625a;
+  --s1:#d9b84e; --s2:#e89434; --s3:#f06a2e; --s4:#ff5a5a; --s0:#3d4a41; --ref-trail:#3e4a42; --ref-paved:#2a332d; --missing:#b98cf0; --warn:#ff8c42; --conn-x:#5fb8cc; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#111713; --surface:#18201b; --ink:#e3e9e3; --muted:#93a198; --line:#2c3730; --faint:#212a24;
+  --accent:#ff7a33; --accent-soft:#3a2418;
+  --g1:#51cf66; --g2:#4dabf7; --g3:#e3e9e3; --conn:#7c877f; --unset:#56625a;
+  --s1:#d9b84e; --s2:#e89434; --s3:#f06a2e; --s4:#ff5a5a; --s0:#3d4a41; --ref-trail:#3e4a42; --ref-paved:#2a332d; --missing:#b98cf0; --warn:#ff8c42; --conn-x:#5fb8cc; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-ui);font-size:14px;line-height:1.45}
+*{box-sizing:border-box}
+.app{height:100%;display:grid;grid-template-rows:auto 1fr;}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 18px;padding:12px 16px 10px;border-bottom:1px solid var(--line)}
+header h1{margin:0;font-size:18px;font-weight:800;letter-spacing:-.01em;text-wrap:balance}
+header h1 span{color:var(--accent)}
+header .meta{color:var(--muted);font-family:var(--font-num);font-size:12px;font-variant-numeric:tabular-nums}
+.main{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:0}
+.mapwrap{position:relative;min-width:0;min-height:0;overflow:hidden;background:var(--bg)}
+#map{width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#map.dragging{cursor:grabbing}
+#map.split{cursor:crosshair}
+.tools{position:absolute;left:12px;top:12px;display:flex;flex-wrap:wrap;gap:6px;max-width:calc(100% - 24px)}
+.seg-ctl{display:inline-flex;border:1px solid var(--line);background:var(--surface);border-radius:6px;overflow:hidden}
+.seg-ctl button{border:0;border-right:1px solid var(--line);background:none}
+.seg-ctl button:last-child{border-right:0}
+button{font:inherit;font-size:13px;font-weight:600;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer}
+button:hover{background:var(--faint)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.danger{color:var(--s4)}
+button:disabled{opacity:.45;cursor:default}
+.legend{position:absolute;left:12px;bottom:12px;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:8px 10px;font-size:12px;display:flex;flex-direction:column;gap:4px;max-width:calc(100% - 24px)}
+.legend .row{display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
+.legend i{display:inline-block;width:18px;height:4px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.hint{position:absolute;right:12px;top:12px;background:var(--ink);color:var(--bg);font-size:12px;padding:6px 10px;border-radius:6px;max-width:260px}
+aside{border-left:1px solid var(--line);background:var(--surface);display:flex;flex-direction:column;min-height:0;min-width:0}
+.tabs{display:flex;border-bottom:1px solid var(--line)}
+.tabs button{flex:1;border:0;border-radius:0;background:none;padding:10px 6px;color:var(--muted);border-bottom:2px solid transparent}
+.tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+.pane{overflow:auto;padding:14px 16px 24px;display:flex;flex-direction:column;gap:14px;min-height:0;flex:1}
+h2{font-size:15px;margin:0;font-weight:800;text-wrap:balance}
+h3{font-size:11px;margin:0;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+p{margin:0}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px}
+.stat .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.stat .v{font-family:var(--font-num);font-size:15px;font-variant-numeric:tabular-nums}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+input[type=text],select,textarea{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+textarea{font-family:var(--font-num);font-size:11.5px;min-height:150px;resize:vertical}
+.grades{display:flex;gap:6px;flex-wrap:wrap}
+.grades button{display:inline-flex;align-items:center;gap:6px;padding:6px 9px}
+.sym{width:14px;height:14px;display:inline-block;flex:none}
+.list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.item{display:grid;grid-template-columns:18px minmax(0,1fr) auto;gap:8px;align-items:center;padding:7px 10px;border:0;border-bottom:1px solid var(--line);border-radius:0;background:none;text-align:left;font-weight:400;width:100%}
+.item:last-child{border-bottom:0}
+.item .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.item .num{font-family:var(--font-num);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.item.on{background:var(--accent-soft)}
+.chip{font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:2px 6px;border-radius:4px;background:var(--faint);color:var(--muted);white-space:nowrap}
+.chip.climb{background:var(--accent-soft);color:var(--accent)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.callout{border:1px solid var(--line);border-radius:6px;padding:10px 12px;background:var(--bg);font-size:13px;display:flex;flex-direction:column;gap:6px}
+.profile{width:100%;height:auto;display:block}
+.toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:7px 12px;border-radius:6px;font-size:13px}
+a{color:var(--accent);font-weight:600}
+ol.steps{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:6px}
+@media (max-width: 760px){
+  .main{grid-template-columns:1fr;grid-template-rows:56vh auto}
+  aside{border-left:0;border-top:1px solid var(--line)}
+  .pane{overflow:visible}
+  .app{height:auto}
+  .hint{display:none}
+}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Burnaby Mountain <span>Trail Editor</span></h1>
+    <div class="meta" id="meta"></div>
+  </header>
+  <div class="main">
+    <div class="mapwrap">
+      <svg id="map" aria-label="Trail network map"></svg>
+      <div class="tools">
+        <div class="seg-ctl" role="group" aria-label="Mode">
+          <button id="mode-select" aria-pressed="true">Select</button>
+          <button id="mode-split" aria-pressed="false">Split</button>
+        </div>
+        <div class="seg-ctl" role="group" aria-label="Colour by">
+          <button id="color-grade" aria-pressed="true">Grade</button>
+          <button id="color-steep" aria-pressed="false">Steepness</button>
+        </div>
+        <button id="btn-fit" title="Fit network">Fit</button>
+        <button id="btn-zin" aria-label="Zoom in">+</button>
+        <button id="btn-zout" aria-label="Zoom out">−</button>
+        <button id="btn-osm" aria-pressed="true" title="Show OpenStreetMap paths behind your network">OSM layer</button>
+        <button id="btn-undo" disabled>Undo</button>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="hint" id="hint" hidden></div>
+      <div class="toast" id="toast" hidden></div>
+    </div>
+    <aside>
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-inspect" aria-selected="true">Inspect</button>
+        <button role="tab" id="tab-blocks" aria-selected="false">Blocks</button>
+        <button role="tab" id="tab-export" aria-selected="false">Export</button>
+      </div>
+      <div class="pane" id="pane"></div>
+    </aside>
+  </div>
+</div>
+
+<script type="module">
+const DATA = await fetch('../data/burnaby-mountain-editor.json').then(r => r.json());
+const STORE_KEY = 'bm-trail-editor-v3';
+const BLOCK_MAX_M = 5000;
+const NS = 'http://www.w3.org/2000/svg';
+const GRADES = [
+  {v:1, name:'Green', desc:'Well graded, runnable'},
+  {v:2, name:'Blue', desc:'Rooty or rocky, some steep pitches'},
+  {v:3, name:'Black', desc:'Steep, technical'},
+  {v:4, name:'Double black', desc:'Very steep or hazardous'},
+];
+
+/* ---------- geometry ---------- */
+const N = DATA.nodes; // [lat, lon, ele]
+const lat0 = N[0][0] * Math.PI / 180, R = 6371000;
+const X = N.map(n => n[1] * Math.PI/180 * R * Math.cos(lat0));
+const Y = N.map(n => -n[0] * Math.PI/180 * R);
+const dist = (a,b) => Math.hypot(X[a]-X[b], Y[a]-Y[b]);
+
+function segStats(path){
+  let len=0, up=0, dn=0; const cum=[0];
+  for(let i=1;i<path.length;i++){
+    len += dist(path[i-1], path[i]); cum.push(len);
+    const dz = N[path[i]][2]-N[path[i-1]][2];
+    if(dz>0) up+=dz; else dn-=dz;
+  }
+  // steepest sustained 100 m (absolute grade)
+  let steep=0, j=0;
+  for(let i=0;i<path.length;i++){
+    while(j<path.length-1 && cum[j]-cum[i] < 100) j++;
+    const d = cum[j]-cum[i];
+    if(d >= 60){ steep = Math.max(steep, Math.abs(N[path[j]][2]-N[path[i]][2])/d); }
+  }
+  return {len, up, dn, cum, steep};
+}
+
+/* ---------- state ---------- */
+const PAVED_MIN = 0.6; // conn extras carry paved:1
+function applyOsm(s, o){
+  if(!o) return;
+  s.osm = o;
+  if(!s.name && o.name){ s.name = o.name; s.nameSrc = 'osm'; }
+  if(s.grade==null && o.imba){ s.grade = o.imba; s.gradeSrc = 'osm'; }
+  if(s.kind==='trail' && o.paved>=PAVED_MIN){ s.kind = 'connector'; s.kindSrc = 'osm'; }
+}
+function freshState(){
+  const segs = DATA.segs.map((s,i)=>({
+    id:'s'+(i+1), path:s.p.slice(), name:'', kind:'trail', grade:null, gradeDown:null,
+    oneway:'no', notes:'', ran:{f:s.f, r:s.r}
+  }));
+  segs.forEach((s,i)=>applyOsm(s, DATA.segs[i].osm));
+  const nodes = {};
+  nodes[DATA.start] = {type:'trailhead', name:'GPX start'};
+  // top: if it is a dead end, use the junction that leads to it
+  let top = DATA.top;
+  const spur = segs.find(s => s.path[0]===top || s.path[s.path.length-1]===top);
+  const endsAt = n => segs.filter(s=>s.path[0]===n||s.path[s.path.length-1]===n).length;
+  if(spur && endsAt(top)===1){ top = spur.path[0]===top ? spur.path[spur.path.length-1] : spur.path[0]; }
+  nodes[top] = {type:'hub', name:'Summit area'};
+  return {segs, nodes, blocks:[], next:segs.length+1};
+}
+let S, restored=false;
+try{ const raw = localStorage.getItem(STORE_KEY); if(raw){ S = JSON.parse(raw); restored = true; } }catch(e){}
+if(!S || !Array.isArray(S.segs)) { S = freshState(); restored=false; }
+else {
+  // bring OSM suggestions into a draft saved before they existed, without overwriting edits
+  S.segs.forEach(s=>{ const i=+s.id.slice(1)-1, d=DATA.segs[i];
+    if(!s.osm && d && d.p[0]===s.path[0] && d.p[d.p.length-1]===s.path[s.path.length-1]) applyOsm(s, d.osm); });
+}
+const history = [];
+function commit(label){
+  history.push(JSON.stringify(S)); if(history.length>60) history.shift();
+  document.getElementById('btn-undo').disabled = false;
+}
+function save(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(S)); }catch(e){} }
+function changed(){ save(); renderMap(); renderPane(); renderMeta(); }
+
+let ui = {osm:true, tab:'inspect', sel:null, mode:'select', color:'grade', blockSel:null, blockFrom:'all', confirmReset:false};
+
+/* ---------- derived ---------- */
+function ends(){
+  const m = new Map();
+  for(const s of S.segs){
+    for(const n of [s.path[0], s.path[s.path.length-1]]){ if(!m.has(n)) m.set(n,[]); m.get(n).push(s); }
+  }
+  return m;
+}
+const segById = id => S.segs.find(s=>s.id===id);
+function nodeLabel(n){
+  const m = S.nodes[n];
+  if(m && m.name) return m.name;
+  return 'J' + n;
+}
+function segLabel(s){ return s.name || ('Segment ' + s.id.slice(1)); }
+const fmtKm = m => m>=1000 ? (m/1000).toFixed(2)+' km' : Math.round(m)+' m';
+const fmtM = m => Math.round(m)+' m';
+
+/* ---------- map view ---------- */
+const svg = document.getElementById('map');
+let view = null; // {x,y,w,h}
+function bounds(){
+  let a=Infinity,b=Infinity,c=-Infinity,d=-Infinity;
+  for(const s of S.segs) for(const n of s.path){ a=Math.min(a,X[n]); b=Math.min(b,Y[n]); c=Math.max(c,X[n]); d=Math.max(d,Y[n]); }
+  return {x:a,y:b,w:c-a,h:d-b};
+}
+function fit(){
+  const bb = bounds(), r = svg.getBoundingClientRect();
+  const pad = 0.08, aspect = r.width / Math.max(1,r.height);
+  let w = bb.w*(1+2*pad), h = bb.h*(1+2*pad);
+  if(w/h < aspect) w = h*aspect; else h = w/aspect;
+  view = {x: bb.x + bb.w/2 - w/2, y: bb.y + bb.h/2 - h/2, w, h};
+  applyView();
+}
+function applyView(){ svg.setAttribute('viewBox', `${view.x} ${view.y} ${view.w} ${view.h}`); renderMap(); }
+function pxToM(){ const r = svg.getBoundingClientRect(); return view.w / Math.max(1,r.width); }
+function toWorld(cx, cy){ const r = svg.getBoundingClientRect(); return {x: view.x + (cx-r.left)/r.width*view.w, y: view.y + (cy-r.top)/r.height*view.h}; }
+function zoomAt(f, cx, cy){
+  const p = toWorld(cx, cy);
+  view = {x: p.x - (p.x-view.x)*f, y: p.y - (p.y-view.y)*f, w: view.w*f, h: view.h*f};
+  applyView();
+}
+
+function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function gradeColor(g){ return g===1?'var(--g1)':g===2?'var(--g2)':g>=3?'var(--g3)':'var(--unset)'; }
+function steepColor(gr){ const a=Math.abs(gr); return a<.05?'var(--s0)':a<.10?'var(--s1)':a<.15?'var(--s2)':a<.20?'var(--s3)':'var(--s4)'; }
+
+function el(tag, attrs, parent){ const e=document.createElementNS(NS,tag); for(const k in attrs) e.setAttribute(k, attrs[k]); if(parent) parent.appendChild(e); return e; }
+function pathD(path){ return 'M' + path.map(n => X[n].toFixed(1)+' '+Y[n].toFixed(1)).join('L'); }
+
+function blockPathNodes(b){
+  const out=[];
+  for(const st of b.steps){ const s=segById(st.seg); if(!s) continue; out.push(st.dir>0? s.path : s.path.slice().reverse()); }
+  return out;
+}
+
+let refLayer=null;
+function buildRef(){
+  refLayer = document.createElementNS(NS,'g');
+  const k = Math.PI/180*R*Math.cos(lat0), kk = Math.PI/180*R;
+  const base = document.createElementNS(NS,'g'), miss = document.createElementNS(NS,'g');
+  (DATA.ref||[]).forEach((w,i)=>{
+    const d = 'M'+w.c.map(c=>(c[0]*k).toFixed(1)+' '+(-c[1]*kk).toFixed(1)).join('L');
+    if(w.m){
+      el('path',{d,fill:'none',stroke:'var(--missing)','stroke-width':2.5,'stroke-dasharray':'5 4','stroke-linecap':'round','vector-effect':'non-scaling-stroke'},miss);
+      el('path',{d,fill:'none',stroke:'transparent','stroke-width':12,'vector-effect':'non-scaling-stroke','data-ref':i,style:'cursor:pointer'},miss);
+    } else {
+      el('path',{d,fill:'none',stroke: w.k==='trail'?'var(--ref-trail)':'var(--ref-paved)','stroke-width': w.k==='trail'?1.6:w.k==='road'?2.6:1.2,'vector-effect':'non-scaling-stroke'},base);
+    }
+  });
+  refLayer.appendChild(base); refLayer.appendChild(miss);
+  refLayer.missLayer = miss;
+}
+function issueXY(it){
+  if(it.type==='gap') return {x:X[it.node], y:Y[it.node]};
+  return {x: it.ll[1]*Math.PI/180*R*Math.cos(lat0), y: -it.ll[0]*Math.PI/180*R};
+}
+function openIssues(){ const dis=new Set(S.dismissed||[]); return (DATA.issues||[]).map((it,i)=>({...it,i})).filter(it=>!dis.has(it.i)); }
+function renderMap(){
+  if(!view) return;
+  svg.textContent='';
+  const px = pxToM();
+  // grid every 250 m
+  const g = el('g',{},svg);
+  const step = view.w/px > 0 ? (px*80 > 250 ? 1000 : 250) : 250;
+  for(let x=Math.floor(view.x/step)*step; x<view.x+view.w; x+=step) el('line',{x1:x,y1:view.y,x2:x,y2:view.y+view.h,stroke:'var(--faint)','stroke-width':1,'vector-effect':'non-scaling-stroke'},g);
+  for(let y=Math.floor(view.y/step)*step; y<view.y+view.h; y+=step) el('line',{x1:view.x,y1:y,x2:view.x+view.w,y2:y,stroke:'var(--faint)','stroke-width':1,'vector-effect':'non-scaling-stroke'},g);
+
+  if(ui.osm){ if(!refLayer) buildRef(); svg.appendChild(refLayer); }
+  if(ui.osm){ const xg=el('g',{},svg); const added=new Set(S.added||[]);
+    (DATA.extras||[]).forEach((e,i)=>{ if(added.has(i)) return; const d=pathD(e.p); const sel=ui.sel&&ui.sel.t==='extra'&&ui.sel.id===i;
+      if(sel) el('path',{d,fill:'none',stroke:'var(--missing)','stroke-width':10,'stroke-opacity':.3,'stroke-linecap':'round','vector-effect':'non-scaling-stroke'},xg);
+      if(e.osm.conn) el('path',{d,fill:'none',stroke:'var(--conn-x)','stroke-width':2.4,'stroke-dasharray':'2 3','stroke-linecap':'round','vector-effect':'non-scaling-stroke'},xg);
+      else el('path',{d,fill:'none',stroke:'var(--missing)','stroke-width':e.osm.highway==='footway'?1.6:2.4,'stroke-dasharray':'5 4','stroke-linecap':'round','stroke-opacity':e.osm.highway==='footway'?.6:1,'vector-effect':'non-scaling-stroke'},xg);
+      el('path',{d,fill:'none',stroke:'transparent','stroke-width':12,'vector-effect':'non-scaling-stroke','data-extra':i,style:'cursor:pointer'},xg); }); }
+  const hl = el('g',{},svg), lines = el('g',{},svg), hits = el('g',{},svg), dots = el('g',{},svg), labels = el('g',{},svg);
+  if(ui.sel && ui.sel.t==='ref' && DATA.ref[ui.sel.id]){ const w=DATA.ref[ui.sel.id]; const k=Math.PI/180*R*Math.cos(lat0), kk=Math.PI/180*R;
+    el('path',{d:'M'+w.c.map(c=>(c[0]*k).toFixed(1)+' '+(-c[1]*kk).toFixed(1)).join('L'),fill:'none',stroke:'var(--missing)','stroke-width':10,'stroke-opacity':.35,'stroke-linecap':'round','vector-effect':'non-scaling-stroke'},hl); }
+  // highlight: selected block or selected segment
+  if(ui.blockSel){
+    for(const p of blockPathNodes(ui.blockSel)) el('path',{d:pathD(p),fill:'none',stroke:'var(--accent)','stroke-width':11,'stroke-linecap':'round','stroke-linejoin':'round','stroke-opacity':.45,'vector-effect':'non-scaling-stroke'},hl);
+  }
+  if(ui.sel && ui.sel.t==='seg'){ const s=segById(ui.sel.id); if(s) el('path',{d:pathD(s.path),fill:'none',stroke:'var(--accent)','stroke-width':12,'stroke-linecap':'round','stroke-linejoin':'round','stroke-opacity':.55,'vector-effect':'non-scaling-stroke'},hl); }
+
+  for(const s of S.segs){
+    if(ui.color==='steep'){
+      for(let i=1;i<s.path.length;i++){
+        const a=s.path[i-1], b=s.path[i], d=dist(a,b); const gr = d>0 ? (N[b][2]-N[a][2])/d : 0;
+        el('line',{x1:X[a],y1:Y[a],x2:X[b],y2:Y[b],stroke:steepColor(gr),'stroke-width':4,'stroke-linecap':'round','vector-effect':'non-scaling-stroke'},lines);
+      }
+    } else {
+      const attrs = {d:pathD(s.path),fill:'none',stroke: s.kind==='connector'?'var(--conn)':gradeColor(s.grade),'stroke-width': s.grade?4:3,'stroke-linecap':'round','stroke-linejoin':'round','vector-effect':'non-scaling-stroke'};
+      if(s.kind==='connector') attrs['stroke-dasharray']='6 5';
+      el('path',attrs,lines);
+      if(s.grade===4 && s.kind!=='connector') el('path',{d:pathD(s.path),fill:'none',stroke:'var(--bg)','stroke-width':1.2,'vector-effect':'non-scaling-stroke'},lines);
+    }
+    const h = el('path',{d:pathD(s.path),fill:'none',stroke:'transparent','stroke-width':16,'stroke-linecap':'round','vector-effect':'non-scaling-stroke','data-seg':s.id,style:'cursor:pointer'},hits);
+  }
+  // nodes
+  const E = ends();
+  for(const [n, list] of E){
+    const meta = S.nodes[n]; const deg = list.length;
+    const sel = ui.sel && ui.sel.t==='node' && ui.sel.id===n;
+    let r = 4, fill='var(--surface)', stroke='var(--ink)', sw=1.5;
+    if(meta && meta.type==='hub'){ r=7; fill='var(--accent)'; stroke='var(--surface)'; sw=2; }
+    else if(meta && meta.type==='trailhead'){ r=7; fill='var(--ink)'; stroke='var(--surface)'; sw=2; }
+    else if(deg===1){ r=3.5; fill='var(--bg)'; stroke='var(--muted)'; }
+    if(sel){ el('circle',{cx:X[n],cy:Y[n],r:(r+6)*px,fill:'none',stroke:'var(--accent)','stroke-width':2.5,'vector-effect':'non-scaling-stroke'},dots); }
+    if(meta && meta.type==='trailhead'){
+      const s2=(r+1)*px; el('rect',{x:X[n]-s2,y:Y[n]-s2,width:2*s2,height:2*s2,fill,stroke,'stroke-width':sw,'vector-effect':'non-scaling-stroke','data-node':n,style:'cursor:pointer'},dots);
+    } else {
+      el('circle',{cx:X[n],cy:Y[n],r:r*px,fill,stroke,'stroke-width':sw,'vector-effect':'non-scaling-stroke','data-node':n,style:'cursor:pointer'},dots);
+    }
+    // bigger invisible hit target
+    el('circle',{cx:X[n],cy:Y[n],r:11*px,fill:'transparent','data-node':n,style:'cursor:pointer'},dots);
+    if(meta && meta.type){
+      const t = el('text',{x:X[n]+10*px,y:Y[n]-8*px,'font-size':12*px,'font-family':'Overpass, sans-serif','font-weight':800,fill:'var(--ink)',stroke:'var(--bg)','stroke-width':3,'paint-order':'stroke','vector-effect':'non-scaling-stroke'},labels);
+      t.textContent = meta.name || (meta.type==='hub'?'Hub':'Trailhead');
+    }
+  }
+  // check markers
+  for(const it of openIssues()){
+    const p=issueXY(it), r=8*px, on = ui.sel && ui.sel.t==='issue' && ui.sel.id===it.i;
+    el('path',{d:`M${p.x} ${p.y-r*1.3}L${p.x+r*1.15} ${p.y+r*.75}L${p.x-r*1.15} ${p.y+r*.75}Z`,fill:'var(--warn)',stroke: on?'var(--ink)':'var(--surface)','stroke-width':on?2.5:1.5,'vector-effect':'non-scaling-stroke','data-issue':it.i,style:'cursor:pointer'},labels);
+  }
+  // scale bar
+  const sb = 500, sx = view.x + view.w - 24*px - sb, sy = view.y + view.h - 24*px;
+  el('line',{x1:sx,y1:sy,x2:sx+sb,y2:sy,stroke:'var(--ink)','stroke-width':2,'vector-effect':'non-scaling-stroke'},svg);
+  for(const xx of [sx,sx+sb]) el('line',{x1:xx,y1:sy-4*px,x2:xx,y2:sy+4*px,stroke:'var(--ink)','stroke-width':2,'vector-effect':'non-scaling-stroke'},svg);
+  const st = el('text',{x:sx+sb/2,y:sy-8*px,'text-anchor':'middle','font-size':11*px,'font-family':'Overpass Mono, monospace',fill:'var(--ink)'},svg); st.textContent='500 m';
+  const na = el('text',{x:sx+sb+4*px,y:sy-30*px,'text-anchor':'end','font-size':12*px,'font-weight':800,'font-family':'Overpass, sans-serif',fill:'var(--muted)'},svg); na.textContent='N ↑';
+  renderLegend();
+}
+
+function sym(g, size=14){
+  const c = g===1?'var(--g1)':g===2?'var(--g2)':'var(--g3)';
+  if(g===1) return `<svg class="sym" viewBox="0 0 14 14" width="${size}" height="${size}"><circle cx="7" cy="7" r="6" fill="${c}"/></svg>`;
+  if(g===2) return `<svg class="sym" viewBox="0 0 14 14" width="${size}" height="${size}"><rect x="1.5" y="1.5" width="11" height="11" fill="${c}"/></svg>`;
+  if(g===3) return `<svg class="sym" viewBox="0 0 14 14" width="${size}" height="${size}"><path d="M7 .5 13.5 7 7 13.5 .5 7z" fill="${c}"/></svg>`;
+  if(g===4) return `<svg class="sym" viewBox="0 0 22 14" width="${size*1.57}" height="${size}"><path d="M6 .5 11 7 6 13.5 1 7zM16 .5 21 7 16 13.5 11 7z" fill="${c}"/></svg>`;
+  return `<svg class="sym" viewBox="0 0 14 14" width="${size}" height="${size}"><circle cx="7" cy="7" r="5.5" fill="none" stroke="var(--unset)" stroke-width="1.5" stroke-dasharray="2 2"/></svg>`;
+}
+
+function renderLegend(){
+  const L = document.getElementById('legend');
+  if(ui.color==='steep'){
+    L.innerHTML = `<div class="row"><b class="small">Grade per stretch</b></div><div class="row">
+      <span><i style="background:var(--s0)"></i>&lt;5%</span><span><i style="background:var(--s1)"></i>5–10%</span>
+      <span><i style="background:var(--s2)"></i>10–15%</span><span><i style="background:var(--s3)"></i>15–20%</span><span><i style="background:var(--s4)"></i>&gt;20%</span></div>`;
+  } else {
+    L.innerHTML = `<div class="row">${GRADES.map(g=>`<span class="row" style="gap:5px">${sym(g.v,12)}${g.name}</span>`).join('')}
+      <span class="row" style="gap:5px">${sym(null,12)}Ungraded</span></div>
+      <div class="row small muted"><span><span style="display:inline-block;width:11px;height:11px;background:var(--accent);border-radius:50%;vertical-align:-1px"></span> Hub</span>
+      <span><span style="display:inline-block;width:10px;height:10px;background:var(--ink);vertical-align:-1px"></span> Trailhead</span>
+      <span>○ Junction</span><span><i style="background:repeating-linear-gradient(90deg,var(--conn) 0 5px,transparent 5px 9px)"></i>Connector</span></div>
+      ${ui.osm?`<div class="row small muted"><span><i style="background:var(--ref-trail);height:2px"></i>OSM path</span><span><i style="background:repeating-linear-gradient(90deg,var(--missing) 0 5px,transparent 5px 9px)"></i>OSM trail not in your network</span><span><i style="background:repeating-linear-gradient(90deg,var(--conn-x) 0 3px,transparent 3px 6px)"></i>Street or sidewalk link</span><span><span style="color:var(--warn)">▲</span> Check</span></div>`:''}`;
+  }
+}
+
+/* ---------- interactions ---------- */
+let drag=null; const pointers=new Map();
+svg.addEventListener('pointerdown', e=>{
+  svg.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===1) drag={x:e.clientX,y:e.clientY,v:{...view},moved:false,target:e.target};
+  else drag=null;
+});
+svg.addEventListener('pointermove', e=>{
+  if(!pointers.has(e.pointerId)) return;
+  const prev = pointers.get(e.pointerId);
+  if(pointers.size===2){
+    const [a,b]=[...pointers.values()];
+    const d0=Math.hypot(a.x-b.x,a.y-b.y);
+    pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    const [c,d]=[...pointers.values()];
+    const d1=Math.hypot(c.x-d.x,c.y-d.y);
+    if(d0>0&&d1>0) zoomAt(d0/d1,(c.x+d.x)/2,(c.y+d.y)/2);
+    return;
+  }
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(!drag) return;
+  const dx=e.clientX-drag.x, dy=e.clientY-drag.y;
+  if(!drag.moved && Math.hypot(dx,dy)>4){ drag.moved=true; svg.classList.add('dragging'); }
+  if(drag.moved){ const k=pxToM(); view={...drag.v,x:drag.v.x-dx*k,y:drag.v.y-dy*k}; applyView(); }
+});
+function endPointer(e){
+  pointers.delete(e.pointerId);
+  svg.classList.remove('dragging');
+  if(drag && !drag.moved && e.type==='pointerup'){ handleClick(drag.target, e.clientX, e.clientY); }
+  drag=null;
+}
+svg.addEventListener('pointerup', endPointer);
+svg.addEventListener('pointercancel', endPointer);
+svg.addEventListener('wheel', e=>{ e.preventDefault(); zoomAt(Math.exp(e.deltaY*0.0015), e.clientX, e.clientY); }, {passive:false});
+
+function handleClick(target, cx, cy){
+  const t = document.elementFromPoint(cx, cy) || target;
+  const nodeAttr = t && t.getAttribute && t.getAttribute('data-node');
+  const segAttr = t && t.getAttribute && t.getAttribute('data-seg');
+  const refAttr = t && t.getAttribute && t.getAttribute('data-ref');
+  const issueAttr = t && t.getAttribute && t.getAttribute('data-issue');
+  const extraAttr = t && t.getAttribute && t.getAttribute('data-extra');
+  if(ui.mode==='split'){
+    if(segAttr){ splitAt(segAttr, cx, cy); } else toast('Tap on a trail line to split it.');
+    return;
+  }
+  if(issueAttr!==null && issueAttr!==undefined){ ui.sel={t:'issue',id:+issueAttr}; ui.tab='inspect'; }
+  else if(nodeAttr!==null && nodeAttr!==undefined){ ui.sel={t:'node',id:+nodeAttr}; ui.tab='inspect'; }
+  else if(segAttr){ ui.sel={t:'seg',id:segAttr}; ui.tab='inspect'; }
+  else if(extraAttr!==null && extraAttr!==undefined){ ui.sel={t:'extra',id:+extraAttr}; ui.tab='inspect'; }
+  else if(refAttr!==null && refAttr!==undefined){ ui.sel={t:'ref',id:+refAttr}; ui.tab='inspect'; }
+  else ui.sel=null;
+  ui.blockSel=null;
+  renderTabs(); renderMap(); renderPane();
+}
+
+function splitAt(segId, cx, cy){
+  const s = segById(segId); const p = toWorld(cx,cy);
+  let best=-1, bd=Infinity;
+  for(let i=1;i<s.path.length-1;i++){ const d=Math.hypot(X[s.path[i]]-p.x, Y[s.path[i]]-p.y); if(d<bd){bd=d;best=i;} }
+  if(best<1){ toast('This segment is too short to split.'); return; }
+  const mx = 30*pxToM();
+  if(bd > Math.max(mx, 40)){ toast('No trail vertex near that spot. Zoom in and tap closer to the line.'); return; }
+  commit('split');
+  const n = s.path[best];
+  const b = {...JSON.parse(JSON.stringify(s)), id:'s'+(S.next++), path:s.path.slice(best), name: s.name || ''};
+  s.path = s.path.slice(0,best+1);
+  S.segs.splice(S.segs.indexOf(s)+1, 0, b);
+  // blocks referencing s become invalid
+  invalidateBlocks([s.id]);
+  ui.sel={t:'node',id:n};
+  toast('Split. A new junction was added.');
+  changed();
+}
+function invalidateBlocks(ids){
+  const before = S.blocks.length;
+  S.blocks = S.blocks.filter(b => !b.steps.some(st => ids.includes(st.seg)));
+  if(S.blocks.length<before) toast('Removed saved blocks that used the changed segment.');
+}
+function mergeAt(n){
+  const list = ends().get(n);
+  if(!list || list.length!==2 || list[0]===list[1]) return;
+  commit('merge');
+  let [a,b] = list;
+  let pa = a.path[a.path.length-1]===n ? a.path.slice() : a.path.slice().reverse();
+  let pb = b.path[0]===n ? b.path.slice() : b.path.slice().reverse();
+  a.path = pa.concat(pb.slice(1));
+  if(!a.name && b.name) a.name=b.name;
+  if(a.grade==null) a.grade=b.grade;
+  S.segs.splice(S.segs.indexOf(b),1);
+  delete S.nodes[n];
+  invalidateBlocks([a.id,b.id]);
+  ui.sel={t:'seg',id:a.id};
+  toast('Merged into one segment.');
+  changed();
+}
+
+let toastT;
+function toast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(()=>t.hidden=true, 2600); }
+
+/* ---------- toolbar ---------- */
+function setMode(m){ ui.mode=m; document.getElementById('mode-select').setAttribute('aria-pressed', m==='select'); document.getElementById('mode-split').setAttribute('aria-pressed', m==='split'); svg.classList.toggle('split', m==='split');
+  const h=document.getElementById('hint'); h.hidden = m!=='split'; h.textContent='Split mode: tap a trail where another trail meets it. Zoom in for precision.'; }
+document.getElementById('mode-select').onclick=()=>setMode('select');
+document.getElementById('mode-split').onclick=()=>setMode('split');
+document.getElementById('color-grade').onclick=()=>{ui.color='grade'; document.getElementById('color-grade').setAttribute('aria-pressed',true); document.getElementById('color-steep').setAttribute('aria-pressed',false); renderMap();};
+document.getElementById('color-steep').onclick=()=>{ui.color='steep'; document.getElementById('color-grade').setAttribute('aria-pressed',false); document.getElementById('color-steep').setAttribute('aria-pressed',true); renderMap();};
+document.getElementById('btn-fit').onclick=fit;
+document.getElementById('btn-osm').onclick=()=>{ ui.osm=!ui.osm; document.getElementById('btn-osm').setAttribute('aria-pressed',ui.osm); renderMap(); };
+function zoomTo(x,y,w=320){ const r=svg.getBoundingClientRect(); const h=w*r.height/Math.max(1,r.width); view={x:x-w/2,y:y-h/2,w,h}; applyView(); }
+document.getElementById('btn-zin').onclick=()=>{const r=svg.getBoundingClientRect(); zoomAt(0.7, r.left+r.width/2, r.top+r.height/2);};
+document.getElementById('btn-zout').onclick=()=>{const r=svg.getBoundingClientRect(); zoomAt(1/0.7, r.left+r.width/2, r.top+r.height/2);};
+document.getElementById('btn-undo').onclick=()=>{ if(!history.length) return; S=JSON.parse(history.pop()); document.getElementById('btn-undo').disabled=!history.length; ui.sel=null; ui.blockSel=null; changed(); toast('Undone.'); };
+
+/* ---------- panel ---------- */
+const pane = document.getElementById('pane');
+function renderTabs(){ for(const t of ['inspect','blocks','export']) document.getElementById('tab-'+t).setAttribute('aria-selected', ui.tab===t); }
+for(const t of ['inspect','blocks','export']) document.getElementById('tab-'+t).onclick=()=>{ ui.tab=t; ui.confirmReset=false; renderTabs(); renderPane(); };
+
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function profileSvg(path){
+  const st = segStats(path); const W=320,H=96,pl=34,pb=16,pt=8,pr=6;
+  const es = path.map(n=>N[n][2]); const lo=Math.min(...es), hi=Math.max(...es); const span=Math.max(20,hi-lo);
+  const y0 = lo - (span-(hi-lo))/2;
+  const xs = d => pl + d/st.len*(W-pl-pr), ys = e => H-pb - (e-y0)/span*(H-pb-pt);
+  const pts = path.map((n,i)=>xs(st.cum[i]).toFixed(1)+','+ys(N[n][2]).toFixed(1)).join(' ');
+  return `<svg class="profile" viewBox="0 0 ${W} ${H}" role="img" aria-label="Elevation profile">
+    <line x1="${pl}" y1="${ys(hi)}" x2="${W-pr}" y2="${ys(hi)}" stroke="var(--faint)"/>
+    <line x1="${pl}" y1="${ys(lo)}" x2="${W-pr}" y2="${ys(lo)}" stroke="var(--faint)"/>
+    <polygon points="${pl},${H-pb} ${pts} ${W-pr},${H-pb}" fill="var(--accent-soft)"/>
+    <polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+    <text x="${pl-4}" y="${ys(hi)+4}" text-anchor="end" font-size="10" font-family="Overpass Mono, monospace" fill="var(--muted)">${Math.round(hi)}</text>
+    <text x="${pl-4}" y="${ys(lo)+4}" text-anchor="end" font-size="10" font-family="Overpass Mono, monospace" fill="var(--muted)">${Math.round(lo)}</text>
+    <text x="${pl}" y="${H-3}" font-size="10" font-family="Overpass Mono, monospace" fill="var(--muted)">0</text>
+    <text x="${W-pr}" y="${H-3}" text-anchor="end" font-size="10" font-family="Overpass Mono, monospace" fill="var(--muted)">${fmtKm(st.len)}</text>
+  </svg>`;
+}
+
+function ranText(r){
+  if(r.f && r.r) return 'Both directions';
+  if(r.f>1||r.r>1) return 'Twice, same way';
+  if(r.f||r.r) return 'Once';
+  return 'Not in GPX';
+}
+
+function renderPane(){
+  if(ui.tab==='blocks') return renderBlocks();
+  if(ui.tab==='export') return renderExport();
+  if(ui.sel && ui.sel.t==='seg'){ const s=segById(ui.sel.id); if(s) return renderSeg(s); }
+  if(ui.sel && ui.sel.t==='node') return renderNode(ui.sel.id);
+  if(ui.sel && ui.sel.t==='ref') return renderRef(ui.sel.id);
+  if(ui.sel && ui.sel.t==='extra') return renderExtra(ui.sel.id);
+  if(ui.sel && ui.sel.t==='issue') return renderIssue(ui.sel.id);
+  renderOverview();
+}
+
+function checksBlock(){
+  const iss=openIssues(); const added=new Set(S.added||[]);
+  const missAll=(DATA.extras||[]).filter((e,i)=>!added.has(i)); const miss=missAll.filter(e=>!e.osm.conn), conns=missAll.filter(e=>e.osm.conn);
+  const missLen=miss.reduce((a,e)=>a+segStats(e.p).len,0), connLen=conns.reduce((a,e)=>a+segStats(e.p).len,0);
+  return `<div style="display:flex;flex-direction:column;gap:6px"><h3>Checks against OpenStreetMap</h3>
+    <div class="list">${iss.map(it=>`<button class="item" data-iss="${it.i}"><span style="color:var(--warn)">▲</span><span class="nm">${ISSUE_LABEL[it.type](it)}</span><span class="num">Check ${it.i+1}</span></button>`).join('') || `<div class="item"><span>✓</span><span class="nm">No open checks</span><span></span></div>`}</div>
+    <p class="small muted">Purple dashed lines are ${miss.length} OSM trail sections (${fmtKm(missLen)}) connected to your network that your GPX didn't run. Tap one to add it.</p>
+    <p class="small muted">Teal dotted lines are ${conns.length} street and sidewalk links (${fmtKm(connLen)}), such as the roads at the top and the way to Drummond's Walk. Added ones count as paved connectors.</p></div>`;
+}
+function filtered(){
+  const f=ui.segFilter||'all';
+  return S.segs.filter(s=> f==='all' || (f==='unnamed'&&!s.name) || (f==='ungraded'&&!s.grade&&s.kind!=='connector') || (f==='two'&&s.osm&&s.osm.gpxOnly) || (f==='conn'&&s.kind==='connector'));
+}
+function renderOverview(){
+  const total = S.segs.reduce((a,s)=>a+segStats(s.path).len,0);
+  const graded = S.segs.filter(s=>s.grade).length;
+  const hubs = Object.values(S.nodes).filter(n=>n.type).length;
+  pane.innerHTML = `
+    ${restored?`<div class="callout small">Restored your saved draft from this browser.</div>`:''}
+    <div class="callout">
+      <b>First draft from “${esc(DATA.meta.name)}”</b>
+      <p class="small">Built from OpenStreetMap trails, keeping the ones your ${DATA.meta.km} km route runs on. Junctions come from OSM, so they're exact. That gives ${ends().size} junctions and ${S.segs.length} segments covering ${fmtKm(total)}.</p>
+      <p class="small">${S.segs.filter(s=>s.nameSrc==='osm').length} segments have an OSM name and ${S.segs.filter(s=>s.gradeSrc==='osm').length} have a grade from the IMBA difficulty tag. Paved stretches are marked as connectors. A few stretches came from your GPX where OSM has no path.</p>
+      <ol class="steps small">
+        <li>Tap purple trails you run to <b>add</b> them. Delete segments you don't want routed.</li>
+        <li>Mark your start points as <b>trailheads</b>.</li>
+        <li>Check grades on the steep and technical trails.</li>
+        <li>Open <b>Blocks</b> to see the climbs and descents between your hubs.</li>
+      </ol>
+    </div>
+    ${checksBlock()}
+    <div class="row" style="justify-content:space-between"><h3>Segments</h3>
+      <select id="seg-filter" style="width:auto;font-size:13px;padding:4px 6px">
+        <option value="all">All (${S.segs.length})</option>
+        <option value="unnamed">Unnamed (${S.segs.filter(s=>!s.name).length})</option>
+        <option value="ungraded">Ungraded (${S.segs.filter(s=>!s.grade&&s.kind!=='connector').length})</option>
+        <option value="two">From your GPX (${S.segs.filter(s=>s.osm&&s.osm.gpxOnly).length})</option>
+        <option value="conn">Connectors (${S.segs.filter(s=>s.kind==='connector').length})</option>
+      </select></div>
+    <p class="small muted">${graded}/${S.segs.length} graded · ${hubs} hubs</p>
+    <div class="list">${filtered().map(s=>{ const st=segStats(s.path); return `<button class="item" data-seg="${s.id}">${sym(s.grade,13)}<span class="nm">${esc(segLabel(s))}</span><span class="num">${fmtKm(st.len)} · ↑${Math.round(st.up)} ↓${Math.round(st.dn)}</span></button>`; }).join('')}</div>`;
+  pane.querySelectorAll('.item').forEach(b=>b.onclick=()=>{ ui.sel={t:'seg',id:b.dataset.seg}; renderMap(); renderPane(); });
+  pane.querySelectorAll('[data-iss]').forEach(b=>b.onclick=()=>{ const i=+b.dataset.iss; ui.sel={t:'issue',id:i}; const p=issueXY(DATA.issues[i]); zoomTo(p.x,p.y,250); renderPane(); });
+  const sf=document.getElementById('seg-filter'); sf.value=ui.segFilter||'all'; sf.onchange=e=>{ ui.segFilter=e.target.value; renderPane(); };
+}
+
+const IMBA_NAMES = {1:'Green (IMBA 0–1)',2:'Blue (IMBA 2)',3:'Black (IMBA 3)',4:'Double black (IMBA 4)'};
+function osmBlock(s){
+  const o=s.osm; if(!o) return '';
+  const bits=[];
+  if(o.gpxOnly) bits.push('From your GPX. OSM has no path mapped here.');
+  if(o.added) bits.push('Added from OSM. It is off your GPX, so its elevation is a rough estimate.');
+  if(o.name) bits.push(`Mostly <b>${esc(o.name)}</b>${o.nameCov<0.95?` (${Math.round(o.nameCov*100)}%)`:''}.`); else bits.push('No trail name in OSM.');
+  if(o.imba) bits.push(`Difficulty tag: ${IMBA_NAMES[o.imba]}${o.imbaMax>o.imba?`, up to ${IMBA_NAMES[o.imbaMax].split(' (')[0].toLowerCase()} in places`:''}.`);
+  if(o.surface) bits.push(`Surface: ${esc(o.surface.replace(/_/g,' '))}.`);
+  if(o.sac) bits.push(`Hiking scale: ${esc(o.sac.replace(/_/g,' '))}.`);
+  if(o.informal) bits.push('Tagged as an informal trail.');
+  if(o.oneway) bits.push('Tagged one-way in OSM.');
+  const alt = o.alt ? `<p class="small"><b>Two trails here:</b> ${esc(o.name||'an unnamed trail')} and ${esc(o.alt)}. There is probably a junction to split.</p>` : '';
+  return `<div class="callout small"><div class="row" style="justify-content:space-between"><b>OpenStreetMap</b><span class="chip">suggestions</span></div><p class="small">${bits.join(' ')}</p>${alt}</div>`;
+}
+
+function mapLinks(lat, lon){
+  return `<div class="row small"><a href="https://www.openstreetmap.org/#map=18/${lat.toFixed(5)}/${lon.toFixed(5)}" target="_blank" rel="noopener">Open in OpenStreetMap</a><a href="https://www.google.com/maps/@${lat.toFixed(5)},${lon.toFixed(5)},180m/data=!3m1!1e3" target="_blank" rel="noopener">Satellite view</a></div>`;
+}
+function backBtn(){ return `<button id="back">← All segments</button>`; }
+function bindBack(){ document.getElementById('back').onclick=()=>{ ui.sel=null; renderMap(); renderPane(); }; }
+
+function renderRef(i){
+  const w=DATA.ref[i]; let L=0; const k=Math.PI/180*R*Math.cos(lat0), kk=Math.PI/180*R;
+  for(let j=1;j<w.c.length;j++) L+=Math.hypot((w.c[j][0]-w.c[j-1][0])*k,(w.c[j][1]-w.c[j-1][1])*kk);
+  const mid=w.c[Math.floor(w.c.length/2)];
+  pane.innerHTML = `<div class="row" style="justify-content:space-between">${backBtn()}<span class="small muted">OSM</span></div>
+    <h2>${esc(w.n||'Unnamed OSM '+(w.hw||'path'))}</h2>
+    <div class="stats"><div class="stat"><div class="k">Length</div><div class="v">${fmtKm(L)}</div></div><div class="stat"><div class="k">OSM type</div><div class="v" style="font-family:var(--font-ui);font-size:14px">${esc(w.hw||'')}</div></div></div>
+    <div class="callout small"><p>This trail is in OpenStreetMap next to your network, but your GPX didn't run it, so the router can't use it.</p><p>If it's a trail you'd run, add it with a short GPX that covers it. If it's closed, informal or not worth running, ignore it.</p></div>
+    ${mapLinks(mid[1],mid[0])}`;
+  bindBack();
+}
+
+function renderExtra(i){
+  const e=DATA.extras[i]; const st=segStats(e.p); const o=e.osm; const m=e.p[Math.floor(e.p.length/2)];
+  pane.innerHTML = `<div class="row" style="justify-content:space-between">${backBtn()}<span class="small muted">OSM extra</span></div>
+    <h2>${esc(o.name||(o.conn?'Street link':'Unnamed OSM '+(o.highway||'path')))}</h2>
+    <div class="stats"><div class="stat"><div class="k">Length</div><div class="v">${fmtKm(st.len)}</div></div><div class="stat"><div class="k">OSM type</div><div class="v" style="font-family:var(--font-ui);font-size:14px">${esc(o.highway||'')}${o.surface?' · '+esc(o.surface.replace(/_/g,' ')):''}</div></div>
+      ${o.imba?`<div class="stat"><div class="k">Difficulty tag</div><div class="v" style="font-family:var(--font-ui);font-size:14px">${IMBA_NAMES[o.imba]}</div></div>`:''}
+      ${o.informal?`<div class="stat"><div class="k">Status</div><div class="v" style="font-family:var(--font-ui);font-size:14px">Informal</div></div>`:''}</div>
+    <p class="small">${o.conn ? `A street or sidewalk link${o.via?' ('+esc(o.via)+')':''}. Add it if you'd run it to join trails together. It will count as a paved connector.` : `This trail connects to your network but your GPX didn't run it. Add it if it's a trail you'd run.`} Its elevation is estimated from nearby points, so climb numbers will be rough.</p>
+    <div class="row"><button id="ex-add" class="primary">Add to network</button></div>
+    ${mapLinks(N[m][0],N[m][1])}`;
+  bindBack();
+  document.getElementById('ex-add').onclick=()=>addExtra(i);
+}
+function addExtra(i){
+  const e=DATA.extras[i]; commit();
+  for(const n of [e.p[0], e.p[e.p.length-1]]){
+    const s=S.segs.find(s=>{ const k=s.path.indexOf(n); return k>0 && k<s.path.length-1; });
+    if(s) splitSegAtIndex(s, s.path.indexOf(n));
+  }
+  const seg={id:'s'+(S.next++), path:e.p.slice(), name:'', kind:'trail', grade:null, gradeDown:null, oneway:'no', notes:'', ran:{f:0,r:0}};
+  applyOsm(seg, {...e.osm, added:true});
+  S.segs.push(seg); S.added=(S.added||[]).concat([i]);
+  const endsNow=new Set(S.segs.filter(x=>x!==seg).flatMap(x=>[x.path[0],x.path[x.path.length-1]]));
+  for(let k=seg.path.length-2;k>=1;k--){ if(endsNow.has(seg.path[k])) splitSegAtIndex(seg,k); }
+  ui.sel={t:'seg',id:seg.id}; toast('Added to your network.'); changed();
+}
+const ISSUE_LABEL = {
+  gap: it=>'Trail ends '+it.d+' m from another',
+  cross: it=>'Trails cross, no junction',
+  gpx: it=>'Stretch from your GPX, not in OSM'
+};
+const ISSUE_TEXT = {
+  gpx: 'Your GPX ran here but OSM has no path mapped, so this stretch was taken from the GPX itself. This is often a street or a trail missing from OSM. Check that it is right and that both ends join the network.',
+  gap: 'A trail ends just short of another trail without joining it. If they meet on the ground, connect them so routes can turn here.',
+  cross: 'Two trails cross here without a junction. If you can turn from one onto the other, connect them. If one passes over or under the other, mark it as not a junction.'
+};
+function renderIssue(i){
+  const it=(DATA.issues||[])[i]; if(!it){ ui.sel=null; return renderPane(); }
+  const p=issueXY(it); const lat=-p.y/(Math.PI/180*R), lon=p.x/(Math.PI/180*R*Math.cos(lat0));
+  const dismissed=(S.dismissed||[]).includes(i);
+  pane.innerHTML = `<div class="row" style="justify-content:space-between">${backBtn()}<span class="small muted">Check ${i+1}</span></div>
+    <h2>${it.type==='gap'?'Trail ends near another trail':it.type==='gpx'?'Stretch from your GPX':'Trails cross without a junction'}</h2>
+    <p class="small">${ISSUE_TEXT[it.type]}${it.type==='gap'?` The gap is ${it.d} m.`:''}</p>
+    ${mapLinks(lat,lon)}
+    ${dismissed?`<p class="small muted">Done.</p>`: it.type==='gpx' ? `<div class="row"><button id="iss-dismiss" class="primary">Looks right</button>${(()=>{const s=segById('s'+(it.seg+1)); return s?`<button id="iss-seg">Open segment</button>`:'';})()}</div>` : `<div class="row"><button id="iss-connect" class="primary">Connect here</button><button id="iss-dismiss">Not a junction</button></div>`}
+    <button id="iss-zoom">Zoom to it</button>`;
+  bindBack();
+  document.getElementById('iss-zoom').onclick=()=>zoomTo(p.x,p.y,250);
+  const c=document.getElementById('iss-connect'); if(c) c.onclick=()=>connectAt(p, it.type==='gap'?it.node:null, i);
+  const d=document.getElementById('iss-dismiss'); if(d) d.onclick=()=>{ commit(); S.dismissed=(S.dismissed||[]).concat([i]); ui.sel=null; changed(); toast(it.type==='gpx'?'Check cleared.':'Marked as not a junction.'); };
+  const os=document.getElementById('iss-seg'); if(os) os.onclick=()=>{ ui.sel={t:'seg',id:'s'+(it.seg+1)}; renderMap(); renderPane(); };
+}
+// nearest vertex on a segment to a point, optionally skipping segments that end at a node
+function nearestVertex(p, excludeNode){
+  let best=null;
+  for(const s of S.segs){
+    if(excludeNode!=null && (s.path[0]===excludeNode || s.path[s.path.length-1]===excludeNode)) continue;
+    s.path.forEach((n,k)=>{ const d=Math.hypot(X[n]-p.x,Y[n]-p.y); if(!best||d<best.d) best={s,k,n,d}; });
+  }
+  return best;
+}
+function splitSegAtIndex(s,k){
+  if(k<=0 || k>=s.path.length-1) return s.path[Math.max(0,Math.min(k,s.path.length-1))];
+  const b = {...JSON.parse(JSON.stringify(s)), id:'s'+(S.next++), path:s.path.slice(k)};
+  const n=s.path[k]; s.path=s.path.slice(0,k+1); S.segs.splice(S.segs.indexOf(s)+1,0,b); invalidateBlocks([s.id]); return n;
+}
+function addLink(a,b){
+  if(a===b) return;
+  if(S.segs.some(s=>(s.path[0]===a&&s.path[s.path.length-1]===b&&s.path.length===2)||(s.path[0]===b&&s.path[s.path.length-1]===a&&s.path.length===2))) return;
+  S.segs.push({id:'s'+(S.next++), path:[a,b], name:'', kind:'trail', grade:null, gradeDown:null, oneway:'no', notes:'Link added by a check', ran:{f:0,r:0}});
+}
+function connectAt(p, fromNode, issueIdx){
+  commit();
+  if(fromNode!=null){
+    const t=nearestVertex({x:X[fromNode],y:Y[fromNode]}, fromNode);
+    if(!t || t.d>40){ history.pop(); toast('No trail close enough to connect to.'); return; }
+    const n=splitSegAtIndex(t.s,t.k); addLink(fromNode,n);
+  } else {
+    const a=nearestVertex(p); if(!a){ history.pop(); return; }
+    const na=splitSegAtIndex(a.s,a.k);
+    let b=null;
+    for(const s of S.segs){ if(s.path.includes(na)) continue; s.path.forEach((n,k)=>{ const d=Math.hypot(X[n]-p.x,Y[n]-p.y); if(!b||d<b.d) b={s,k,n,d}; }); }
+    if(!b || b.d>30){ history.pop(); toast('Could not find the second trail near this spot.'); return; }
+    const nb=splitSegAtIndex(b.s,b.k); addLink(na,nb);
+  }
+  S.dismissed=(S.dismissed||[]).concat([issueIdx]);
+  ui.sel=null; toast('Connected.'); changed();
+}
+
+function renderSeg(s){
+  const st = segStats(s.path), a=s.path[0], b=s.path[s.path.length-1];
+  const longWarn = st.len>2500 ? `<div class="callout small">At ${fmtKm(st.len)} this segment probably passes junctions you ran straight through. Use <b>Split</b> to cut it there.</div>` : '';
+  const shortWarn = st.len<60 ? `<div class="callout small">This sliver is ${Math.round(st.len)} m long. It may be a junction detected twice; tap one of its end points and merge if so.</div>` : '';
+  const gradeBtns = (field) => `<div class="grades">${GRADES.map(g=>`<button data-f="${field}" data-g="${g.v}" aria-pressed="${s[field]===g.v}" title="${g.desc}">${sym(g.v,13)}${g.name}</button>`).join('')}<button data-f="${field}" data-g="" aria-pressed="${s[field]==null}">Unset</button></div>`;
+  pane.innerHTML = `
+    <div class="row" style="justify-content:space-between"><button id="back">← All segments</button><span class="small muted">${s.id}</span></div>
+    <label class="f">Trail name${s.nameSrc==='osm'?' · from OSM':''}<input type="text" id="seg-name" value="${esc(s.name)}" placeholder="e.g. Velodrome Trail"></label>
+    ${osmBlock(s)}
+    <div class="stats">
+      <div class="stat"><div class="k">Length</div><div class="v">${fmtKm(st.len)}</div></div>
+      <div class="stat"><div class="k">Steepest 100 m</div><div class="v">${(st.steep*100).toFixed(0)}%</div></div>
+      <div class="stat"><div class="k">Climb A→B</div><div class="v">↑${fmtM(st.up)} ↓${fmtM(st.dn)}</div></div>
+      <div class="stat"><div class="k">In your GPX</div><div class="v" style="font-family:var(--font-ui);font-size:14px">${ranText(s.ran)}</div></div>
+    </div>
+    <div>
+      <div class="row small muted" style="justify-content:space-between"><span>A · ${esc(nodeLabel(a))} · ${Math.round(N[a][2])} m</span><span>B · ${esc(nodeLabel(b))} · ${Math.round(N[b][2])} m</span></div>
+      ${profileSvg(s.path)}
+    </div>
+    ${longWarn}${shortWarn}
+    ${(()=>{ const m=s.path[Math.floor(s.path.length/2)]; return mapLinks(N[m][0],N[m][1]); })()}
+    <div style="display:flex;flex-direction:column;gap:6px"><h3>Grade${s.gradeSrc==='osm'?' · from OSM, confirm it':''}</h3>${gradeBtns('grade')}</div>
+    <div style="display:flex;flex-direction:column;gap:6px"><h3>Descending grade (if harder)</h3>${gradeBtns('gradeDown')}</div>
+    <div class="row">
+      <label class="f" style="flex:1;min-width:130px">Type<select id="seg-kind"><option value="trail">Trail</option><option value="connector">Paved connector</option></select></label>
+      <label class="f" style="flex:1;min-width:130px">Direction<select id="seg-oneway"><option value="no">Both ways</option><option value="forward">One-way A→B</option><option value="reverse">One-way B→A</option></select></label>
+    </div>
+    <label class="f">Notes<input type="text" id="seg-notes" value="${esc(s.notes)}" placeholder="e.g. muddy Nov–Mar, bike-only downhill"></label>
+    <div style="display:flex;flex-direction:column;gap:6px"><h3>Remove</h3>
+    <p class="small muted">For a duplicate pass, a wrong turn in the GPX, or anything that shouldn't be in the network.</p>
+    <div class="row">${ui.confirmDel===s.id?`<button id="del-yes" class="danger">Yes, delete this segment</button><button id="del-no">Cancel</button>`:`<button id="del" class="danger">Delete segment</button>`}</div></div>`;
+  document.getElementById('seg-kind').value=s.kind; document.getElementById('seg-oneway').value=s.oneway;
+  document.getElementById('back').onclick=()=>{ ui.sel=null; renderMap(); renderPane(); };
+  const bindText=(id,f)=>{ const i=document.getElementById(id); i.onfocus=()=>commit(); i.oninput=()=>{ s[f]=i.value; if(f==='name') delete s.nameSrc; save(); renderMap(); }; i.onchange=()=>renderMeta(); };
+  bindText('seg-name','name'); bindText('seg-notes','notes');
+  document.getElementById('seg-kind').onchange=e=>{ commit(); s.kind=e.target.value; delete s.kindSrc; changed(); };
+  document.getElementById('seg-oneway').onchange=e=>{ commit(); s.oneway=e.target.value; changed(); };
+  pane.querySelectorAll('.grades button').forEach(btn=>btn.onclick=()=>{ commit(); s[btn.dataset.f] = btn.dataset.g? +btn.dataset.g : null; if(btn.dataset.f==='grade') delete s.gradeSrc; changed(); });
+  const dl=document.getElementById('del'); if(dl) dl.onclick=()=>{ ui.confirmDel=s.id; renderPane(); };
+  const dn=document.getElementById('del-no'); if(dn) dn.onclick=()=>{ ui.confirmDel=null; renderPane(); };
+  const dy=document.getElementById('del-yes'); if(dy) dy.onclick=()=>{ commit(); S.segs.splice(S.segs.indexOf(s),1); invalidateBlocks([s.id]); ui.confirmDel=null; ui.sel=null; toast('Segment deleted. Undo brings it back.'); changed(); };
+}
+
+function renderNode(n){
+  const list = ends().get(n) || []; const meta = S.nodes[n] || {type:null,name:''};
+  const deg=list.length;
+  const kind = meta.type==='hub'?'Hub':meta.type==='trailhead'?'Trailhead':deg===1?'Dead end':'Junction';
+  pane.innerHTML = `
+    <div class="row" style="justify-content:space-between"><button id="back">← All segments</button><span class="small muted">J${n}</span></div>
+    <h2>${esc(meta.name || kind)}</h2>
+    <div class="stats">
+      <div class="stat"><div class="k">Elevation</div><div class="v">${Math.round(N[n][2])} m</div></div>
+      <div class="stat"><div class="k">Trails meeting</div><div class="v">${deg}</div></div>
+    </div>
+    ${mapLinks(N[n][0],N[n][1])}
+    <div style="display:flex;flex-direction:column;gap:6px"><h3>Role</h3>
+      <div class="grades">
+        <button data-t="" aria-pressed="${!meta.type}">Plain junction</button>
+        <button data-t="hub" aria-pressed="${meta.type==='hub'}">Hub</button>
+        <button data-t="trailhead" aria-pressed="${meta.type==='trailhead'}">Trailhead</button>
+      </div>
+      <p class="small muted">Hubs and trailheads are where blocks start and end. Trailheads are where a run can start, such as a parking lot.</p>
+    </div>
+    ${meta.type?`<label class="f">Name<input type="text" id="node-name" value="${esc(meta.name||'')}" placeholder="e.g. Burnaby Mountain Park lot"></label>`:''}
+    <div style="display:flex;flex-direction:column;gap:6px"><h3>Segments here</h3>
+      <div class="list">${list.map(s=>{const st=segStats(s.path); return `<button class="item" data-seg="${s.id}">${sym(s.grade,13)}<span class="nm">${esc(segLabel(s))}</span><span class="num">${fmtKm(st.len)}</span></button>`;}).join('')}</div>
+    </div>
+    ${deg===2 && list[0]!==list[1] ? `<button id="merge">Merge these two segments</button><p class="small muted">Use this when no other trail actually joins here.</p>`:''}`;
+  document.getElementById('back').onclick=()=>{ ui.sel=null; renderMap(); renderPane(); };
+  pane.querySelectorAll('.grades button').forEach(b=>b.onclick=()=>{ commit(); const t=b.dataset.t;
+    if(!t){ delete S.nodes[n]; } else { S.nodes[n] = {type:t, name: (S.nodes[n]&&S.nodes[n].name) || ''}; }
+    changed(); });
+  pane.querySelectorAll('.item').forEach(b=>b.onclick=()=>{ ui.sel={t:'seg',id:b.dataset.seg}; renderMap(); renderPane(); });
+  const nm=document.getElementById('node-name'); if(nm){ nm.onfocus=()=>commit(); nm.oninput=()=>{ S.nodes[n].name=nm.value; save(); renderMap(); }; }
+  const mg=document.getElementById('merge'); if(mg) mg.onclick=()=>mergeAt(n);
+}
+
+/* ---------- blocks ---------- */
+function hubList(){ return Object.entries(S.nodes).filter(([k,v])=>v.type).map(([k,v])=>+k); }
+function enumerateBlocks(){
+  const hubs = new Set(hubList()); const adj = new Map();
+  for(const s of S.segs){
+    const a=s.path[0], b=s.path[s.path.length-1], st=segStats(s.path);
+    const add=(f,t,dir)=>{ if(!adj.has(f)) adj.set(f,[]); adj.get(f).push({s, to:t, dir, len:st.len, up:dir>0?st.up:st.dn, dn:dir>0?st.dn:st.up}); };
+    if(s.oneway!=='reverse') add(a,b,1);
+    if(s.oneway!=='forward') add(b,a,-1);
+  }
+  // distance from every node to its nearest hub, so dead-end searches stop early
+  const toHub = new Map(); const q=[...hubs].map(h=>[0,h]);
+  while(q.length){ q.sort((x,y)=>x[0]-y[0]); const [dd,n]=q.shift(); if(toHub.has(n)) continue; toHub.set(n,dd);
+    for(const e of (adj.get(n)||[])) if(!toHub.has(e.to)) q.push([dd+e.len,e.to]); }
+  const out=[]; const MAXLEN=BLOCK_MAX_M, MAX=1500; let pops=0, capped=false;
+  for(const h of hubs){
+    const stack=[{n:h, steps:[], len:0, up:0, dn:0, seen:new Set([h]), used:new Set()}];
+    while(stack.length){
+      if(out.length>=MAX || ++pops>250000){ capped=true; break; }
+      const cur=stack.pop();
+      for(const e of (adj.get(cur.n)||[])){
+        if(cur.used.has(e.s.id) || cur.seen.has(e.to)) continue;
+        const len=cur.len+e.len; if(len + (toHub.get(e.to)??Infinity) > MAXLEN) continue;
+        const nxt={n:e.to, steps:cur.steps.concat([{seg:e.s.id,dir:e.dir}]), len, up:cur.up+e.up, dn:cur.dn+e.dn, seen:new Set(cur.seen).add(e.to), used:new Set(cur.used).add(e.s.id)};
+        if(hubs.has(e.to)){ if(e.to!==h) out.push({from:h,to:e.to,steps:nxt.steps,len,up:nxt.up,dn:nxt.dn}); }
+        else stack.push(nxt);
+      }
+    }
+  }
+  for(const b of out){ const net=b.up-b.dn; b.role = net>40?'climb':net<-40?'descent':'traverse'; b.key=b.steps.map(s=>s.seg+(s.dir>0?'+':'-')).join(','); }
+  out.sort((a,b)=> a.from-b.from || a.to-b.to || b.up-a.up);
+  out.capped = capped;
+  return out;
+}
+function blockSummary(b){ return b.steps.map(st=>segLabel(segById(st.seg)||{id:st.seg})).join(' → '); }
+
+function renderBlocks(){
+  const hubs = hubList();
+  if(hubs.length<2){ pane.innerHTML=`<div class="callout"><b>Add at least two hubs</b><p class="small">Tap junctions on the map and mark them as hubs or trailheads. Blocks are the routes between them.</p></div>`; return; }
+  const all = enumerateBlocks();
+  const saved = new Set(S.blocks.map(b=>b.key));
+  const from = ui.blockFrom;
+  const shown = all.filter(b=> from==='all' || b.from===+from).slice(0,120);
+  pane.innerHTML = `
+    <div class="callout small">Every route between two hubs that doesn't repeat a trail or pass through another hub, up to 5 km. Add hubs at your key junctions to get shorter, more useful blocks. Save the ones you'd actually run as building blocks for the generator.</div>
+    ${S.blocks.length?`<div style="display:flex;flex-direction:column;gap:6px"><h3>Saved blocks (${S.blocks.length})</h3><div class="list">${S.blocks.map((b,i)=>`<button class="item ${ui.blockSel&&ui.blockSel.key===b.key?'on':''}" data-saved="${i}"><span class="chip ${b.role}">${b.role.slice(0,1)}</span><span class="nm">${esc(nodeLabel(b.from))} → ${esc(nodeLabel(b.to))}</span><span class="num">${fmtKm(b.len)} ↑${Math.round(b.up)}</span></button>`).join('')}</div></div>`:''}
+    <div class="row" style="justify-content:space-between"><h3>Candidates (${all.length}${all.capped?'+, search capped':''})</h3>
+      <select id="block-from" style="width:auto;font-size:13px;padding:4px 6px"><option value="all">From any hub</option>${hubs.map(h=>`<option value="${h}">From ${esc(nodeLabel(h))}</option>`).join('')}</select></div>
+    <div class="list">${shown.map((b,i)=>`<button class="item ${ui.blockSel&&ui.blockSel.key===b.key?'on':''}" data-cand="${i}"><span class="chip ${b.role}">${b.role.slice(0,1)}</span><span class="nm">${esc(nodeLabel(b.from))} → ${esc(nodeLabel(b.to))}<br><span class="small muted">${esc(blockSummary(b))}</span></span><span class="num">${fmtKm(b.len)}<br>↑${Math.round(b.up)} ↓${Math.round(b.dn)}</span></button>`).join('')}</div>
+    ${ui.blockSel?`<div class="callout"><b>${esc(nodeLabel(ui.blockSel.from))} → ${esc(nodeLabel(ui.blockSel.to))}</b><p class="small">${esc(blockSummary(ui.blockSel))}</p><p class="small muted">${fmtKm(ui.blockSel.len)} · ↑${Math.round(ui.blockSel.up)} m ↓${Math.round(ui.blockSel.dn)} m</p>
+      <div class="row">${saved.has(ui.blockSel.key)?`<button id="unsave" class="danger">Remove block</button>`:`<button id="save" class="primary">Save as block</button>`}</div></div>`:''}`;
+  document.getElementById('block-from').value = from;
+  document.getElementById('block-from').onchange=e=>{ ui.blockFrom=e.target.value; renderPane(); };
+  pane.querySelectorAll('[data-cand]').forEach(btn=>btn.onclick=()=>{ ui.blockSel=shown[+btn.dataset.cand]; ui.sel=null; renderMap(); renderPane(); });
+  pane.querySelectorAll('[data-saved]').forEach(btn=>btn.onclick=()=>{ ui.blockSel=S.blocks[+btn.dataset.saved]; ui.sel=null; renderMap(); renderPane(); });
+  const sv=document.getElementById('save'); if(sv) sv.onclick=()=>{ commit(); S.blocks.push({...ui.blockSel}); changed(); toast('Block saved.'); };
+  const us=document.getElementById('unsave'); if(us) us.onclick=()=>{ commit(); S.blocks=S.blocks.filter(b=>b.key!==ui.blockSel.key); changed(); };
+}
+
+/* ---------- export ---------- */
+function exportObj(){
+  const E = ends();
+  return {
+    area:'Burnaby Mountain', version:1, source:'Draft from GPX "'+DATA.meta.name+'"; elevations from the GPX, replace with LiDAR in the build step.',
+    hubs: [...E.keys()].filter(n=>S.nodes[n]&&S.nodes[n].type).map(n=>({id:'J'+n, type:S.nodes[n].type, name:S.nodes[n].name||'', lat:N[n][0], lon:N[n][1], ele:N[n][2]})),
+    segments: { type:'FeatureCollection', features: S.segs.map(s=>{ const st=segStats(s.path); return {
+      type:'Feature', geometry:{type:'LineString', coordinates:s.path.map(n=>[N[n][1],N[n][0],N[n][2]])},
+      properties:{id:s.id, name:s.name, kind:s.kind, grade:s.grade, gradeDown:s.gradeDown, oneway:s.oneway, notes:s.notes,
+        from:'J'+s.path[0], to:'J'+s.path[s.path.length-1], length_m:Math.round(st.len), gain_fwd_m:Math.round(st.up), gain_rev_m:Math.round(st.dn)} }; }) },
+    blocks: S.blocks.map((b,i)=>({id:'b'+(i+1), from:'J'+b.from, to:'J'+b.to, role:b.role, steps:b.steps, length_m:Math.round(b.len), gain_m:Math.round(b.up), loss_m:Math.round(b.dn)})),
+    _editor: S
+  };
+}
+function renderExport(){
+  const txt = JSON.stringify(exportObj());
+  pane.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:6px"><h3>Export data file</h3>
+    <p class="small">Hubs, segments as GeoJSON, and saved blocks. This is the curated file the route generator will load. Save it as <code>data/burnaby-mountain/curated.json</code> and run <code>python3 scripts/build_router_data.py</code>.</p>
+    <div class="row"><button id="download" class="primary">Download JSON</button><button id="copy">Copy JSON</button><span class="small muted">${(txt.length/1024).toFixed(0)} KB</span></div>
+    <textarea id="export-text" readonly aria-label="Exported JSON">${esc(txt)}</textarea></div>
+    <div style="display:flex;flex-direction:column;gap:6px"><h3>Load a saved file</h3>
+    <textarea id="import-text" aria-label="Paste JSON to import" placeholder="Paste an exported file here"></textarea>
+    <div class="row"><button id="import">Load</button></div></div>
+    <div style="display:flex;flex-direction:column;gap:6px"><h3>Start over</h3>
+    <p class="small muted">Your edits are saved in this browser only. Starting over restores the original GPX draft.</p>
+    <div class="row">${ui.confirmReset?`<button id="reset-yes" class="danger">Yes, discard my edits</button><button id="reset-no">Keep editing</button>`:`<button id="reset">Start over from GPX</button>`}</div></div>`;
+  document.getElementById('download').onclick=()=>{ const url=URL.createObjectURL(new Blob([document.getElementById('export-text').value],{type:'application/json'})); const l=document.createElement('a'); l.href=url; l.download='burnaby-mountain-curated.json'; document.body.appendChild(l); l.click(); l.remove(); setTimeout(()=>URL.revokeObjectURL(url),2000); };
+  document.getElementById('copy').onclick=async()=>{ const ta=document.getElementById('export-text');
+    try{ await navigator.clipboard.writeText(ta.value); toast('Copied.'); }catch(e){ ta.focus(); ta.select(); toast('Selected. Press Ctrl/Cmd+C to copy.'); } };
+  document.getElementById('import').onclick=()=>{ try{ const o=JSON.parse(document.getElementById('import-text').value); const st=o._editor||o; if(!Array.isArray(st.segs)) throw 0; commit(); S=st; ui.sel=null; ui.blockSel=null; changed(); fit(); toast('Loaded.'); }catch(e){ toast('That isn’t an export from this editor. Paste the whole file.'); } };
+  const r=document.getElementById('reset'); if(r) r.onclick=()=>{ ui.confirmReset=true; renderPane(); };
+  const rn=document.getElementById('reset-no'); if(rn) rn.onclick=()=>{ ui.confirmReset=false; renderPane(); };
+  const ry=document.getElementById('reset-yes'); if(ry) ry.onclick=()=>{ commit(); S=freshState(); restored=false; ui.confirmReset=false; ui.sel=null; ui.blockSel=null; changed(); fit(); toast('Back to the GPX draft. Undo is still available.'); };
+}
+
+function renderMeta(){
+  const total = S.segs.reduce((a,s)=>a+segStats(s.path).len,0);
+  document.getElementById('meta').textContent = `© OpenStreetMap contributors · ${S.segs.length} segments · ${ends().size} junctions · ${(total/1000).toFixed(1)} km unique trail · ${hubList().length} hubs · ${S.blocks.length} blocks`;
+}
+
+renderTabs(); renderMeta(); renderPane();
+requestAnimationFrame(fit);
+window.addEventListener('resize', ()=>{ if(view){ const r=svg.getBoundingClientRect(); const k=view.w/view.h, a=r.width/Math.max(1,r.height); if(Math.abs(k-a)>0.01) fit(); } });
+</script>
+</body>
+</html>
