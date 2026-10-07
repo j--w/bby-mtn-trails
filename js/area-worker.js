@@ -1,25 +1,2 @@
-// Module Web Worker for the setup page: compiles the area and finds connector suggestions off the main thread.
-import { compileArea, suggestConnectors } from './area-package.js';
-const ctx = self;
-let raw = null;
-ctx.onmessage = e => {
-    const m = e.data;
-    if (m.raw) {
-        raw = m.raw;
-        return;
-    }
-    try {
-        // raw comes first; if it didn't, compileArea throws and the page gets the error below
-        const compiled = compileArea(raw, m.edits);
-        const suggestions = suggestConnectors(raw, compiled, m.edits);
-        const states = Object.fromEntries(compiled.pieces.map(p => [p.id, p.state]));
-        const pieces = m.withPieces ? compiled.pieces.map(({ id, way, path, layer, len, tags }) => ({ id, way, path, layer, len, name: tags.name || '', hw: tags.highway })) : null;
-        const r = compiled.report;
-        ctx.postMessage({ id: m.id, states, pieces, data: compiled.data, suggestions, provisional: compiled.provisional,
-            trailheads: compiled.trailheads, joins: compiled.joins,
-            snaps: r ? r.snapped.map(s => s.nodes) : [], keptM: r ? r.kept.m : 0 });
-    }
-    catch (err) {
-        ctx.postMessage({ id: m.id, error: err.message });
-    }
-};
+import{f as n,g as p}from"../chunks/chunk-DDDUTCIT.js";import"../chunks/chunk-F2QI2JOW.js";import"../chunks/chunk-YF3PM3F3.js";import"../chunks/chunk-KVMUXFPB.js";var a=self,o=null;a.onmessage=m=>{let r=m.data;if(r.raw){o=r.raw;return}try{let e=n(o,r.edits),d=p(o,e,r.edits),l=Object.fromEntries(e.pieces.map(s=>[s.id,s.state])),u=r.withPieces?e.pieces.map(({id:s,way:c,path:g,layer:w,len:k,tags:i})=>({id:s,way:c,path:g,layer:w,len:k,name:i.name||"",hw:i.highway})):null,t=e.report;a.postMessage({id:r.id,states:l,pieces:u,data:e.data,suggestions:d,provisional:e.provisional,trailheads:e.trailheads,joins:e.joins,snaps:t?t.snapped.map(s=>s.nodes):[],keptM:t?t.kept.m:0})}catch(e){a.postMessage({id:r.id,error:e.message})}};
+//# sourceMappingURL=area-worker.js.map

@@ -28,7 +28,6 @@ export declare function tileXY(lat: number, lon: number, z: number): [number, nu
 export declare function terrariumSource({ zoom, url, loadTile }?: TerrariumOptions): ElevationSource;
 export declare const HRDEM_BASE = "https://canelevation-dem.s3.ca-central-1.amazonaws.com/hrdem-mosaic-1m/";
 export declare const HRDEM_ATTRIBUTION = "Elevation: HRDEM, Natural Resources Canada (Open Government Licence \u2013 Canada)";
-export declare const GEOTIFF_URL = "https://cdn.jsdelivr.net/npm/geotiff@3.0.5/+esm";
 export declare function toCanadaLambert(lat: number, lon: number): [number, number];
 export declare const hrdemTileId: (x: number, y: number) => string;
 export declare function hrdemSource({ geotiff, resolution, base }?: HrdemOptions): ElevationSource;

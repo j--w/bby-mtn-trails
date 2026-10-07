@@ -47,6 +47,10 @@ export interface SetupOptions {
     theme?: 'auto' | 'light' | 'dark';
     /** Text of the save button. Default 'Save area'. */
     saveLabel?: string;
+    /** Overpass API endpoints to load OpenStreetMap data from, tried in order (each is sent the query as a
+     *  form POST and must allow cross-origin requests), e.g. your own server first and the public ones after.
+     *  Default: overpass-api.de, then overpass.private.coffee. */
+    overpass?: string[];
     /** The runner saved the area: store it, or hand it to the route builder's update({ area }). The button waits
      *  while a returned promise runs; a rejection's message is shown. Without this, saving downloads the file. */
     onAreaSaved?(area: AreaPackage): void | Promise<void>;
