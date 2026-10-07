@@ -1,5 +1,5 @@
 name: Deploy site to GitHub Pages
-# Publishes site/ to the root of the gh-pages branch (Pages source: Deploy from a branch, gh-pages, / (root)).
+# Builds (src/ TypeScript compiles into site/), then publishes site/ to the root of the gh-pages branch (Pages source: Deploy from a branch, gh-pages, / (root)).
 # PR previews live under pr-preview/ on the same branch (preview.yml), so this deploy leaves that folder alone.
 on:
   push:
@@ -15,6 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build
+        run: npm ci && npm run build
       - uses: JamesIves/github-pages-deploy-action@v4.9.0
         with:
           folder: site

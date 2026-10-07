@@ -2,27 +2,32 @@
 
 Generates trail-running loops on a hand-curated trail network (any area; first built for Burnaby Mountain, BC) from a
 distance and climb target, or as "longest loop" options, and exports GPX. Built for ultramarathon training and a
-local running club. Static site, no server. Areas are set up in the browser from OpenStreetMap
+local running club. Static site, no server; TypeScript in `src/` compiles with `tsc` into `site/`. Areas are set up in the browser from OpenStreetMap
 (`site/setup/`) and saved as area files (`.trails.json`); there is no built-in area.
 
 ## Layout
 
+- `src/` is the TypeScript source: `src/js/*.ts` and `src/widget/v1/*.ts` compile (`npm run build`, plain `tsc`, no
+  bundler) to the same paths under `site/`, as ES modules with `.d.ts` next to them. The emitted `site/js/` and
+  `site/widget/` are build output (gitignored); edit `src/`. Paths below are where the compiled files land.
 - `site/` is the deployed static site (GitHub Pages serves it from the `gh-pages` branch; `pages.yml` publishes main
   there and `preview.yml` puts each PR at `pr-preview/pr-<number>/`).
   - `index.html`: the route builder page, a thin consumer of the widget (top bar, start screen). Opens
     `?area=<url of a .trails.json>`, else the last area opened in this browser (IndexedDB `current`), else a start
     screen (open an area file / set one up).
   - `widget/v1/`: the two embeddable widgets. `trails-widget.js` exports `mount(el, options)`, the route builder
-    (map, controls, results, elevation profile, GPX; search runs in a blob worker that `importScripts`
+    (map, controls, results, elevation profile, GPX; search runs in a blob module worker that imports
     `js/router-core.js`, so it works cross-origin). `setup-widget.js` exports `mountSetup(el, options)`, area setup
     (tracks from the host, `onCoverage`, `onAreaSaved`; compiling runs in a blob module worker that imports
     `js/area-worker.js`). They're separate so route-only pages don't load setup. `common.js` has what both share
     (Leaflet 1.9.4 from cdnjs, injected if the host lacks it; the theme tokens and base CSS, scoped under `.tw`).
-    `model.js` holds the route builder's DOM-free parts (params, trailheads, `toRoute`, GPX). The `.d.ts` files are
-    the public contract: keep them backward compatible within v1 (new optional fields only; breaking changes go in
+    `model.js` holds the route builder's DOM-free parts (params, trailheads, `toRoute`, GPX). The exported types (generated
+    into `trails-widget.d.ts` and `setup-widget.d.ts`, doc comments included) are the public contract: keep them
+    backward compatible within v1 (new optional fields only; breaking changes go in
     `v2/`). Params are metres; trailhead ids are positions (`lat,lon` to 5 places). Grades still drive routing data
     but aren't offered: every vetted trail is allowed (maxg 4).
-  - `js/router-core.js`: route search. Pure functions, no DOM, classic script (no exports). `buildGraph`, `solve`
+  - `js/types.ts`: shared data shapes (`RouterData`, the compact graph an area carries).
+  - `js/router-core.js`: route search. Pure functions, no DOM. `buildGraph`, `solve`
     (target mode), `solveLongest` (longest-loop mode), `routeGeometry` (route → points with distance and lap),
     `reachableKm`. Shared by the widget's worker and the tests.
   - `js/area-build.js`: `buildRouterData` (snap near-misses, close dead ends, drop islands) → compact routing
@@ -51,11 +56,14 @@ local running club. Static site, no server. Areas are set up in the browser from
 ## Commands
 
 ```bash
-npm test                                   # tests (Node 20+, no dependencies)
-npm run serve                              # http://localhost:8000 (route builder), /setup/ (area setup)
+npm install                                # typescript and @types/leaflet (dev only)
+npm run build                              # tsc: type check src/ and emit into site/
+npm test                                   # build, then the Node tests (Node 20+) against the emitted site/ modules
+npm run serve                              # build, then http://localhost:8000 (route builder), /setup/ (area setup)
 ```
 
-CI (`.github/workflows/tests.yml`) runs the tests.
+CI (`.github/workflows/tests.yml`) type checks and runs the tests; `pages.yml` and `preview.yml` build before
+publishing `site/`.
 
 ## Rules that matter
 
@@ -71,9 +79,11 @@ CI (`.github/workflows/tests.yml`) runs the tests.
 - Segment kinds: `trail` or `connector` (paved/road/sidewalk, penalised by the "Paved sections" option).
 - Elevations are approximate (HRDEM LiDAR or terrain tiles, smoothed). Don't present climb as exact.
 - Map data is © OpenStreetMap contributors (ODbL). Keep the attribution in the UI and README.
-- Keep it static: no build step, no framework, no backend. Libraries only if they earn it (CDN, pinned version).
+- Keep it static: the only build step is `tsc` (no bundler, no framework, no backend). Runtime libraries only if
+  they earn it (CDN, pinned version); dev dependencies stay at typescript and @types/leaflet, pinned exactly.
 
 ## Style
 
-Plain JS (ES2020+), small functions, no dependencies. UI copy is short and written for runners. Both light and
+TypeScript (strict; `noImplicitAny` is off for now, so annotate exported functions and data shapes), small
+functions. Imports use `.js` extensions (they resolve to the `.ts` source and work unchanged in the browser). UI copy is short and written for runners. Both light and
 dark themes are defined as CSS custom properties at the top of each page; style through those tokens.

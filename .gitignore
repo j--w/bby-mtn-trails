@@ -3,3 +3,6 @@ __pycache__/
 node_modules/
 .DS_Store
 /tmp/
+# build output (npm run build compiles src/ into site/)
+/site/js/
+/site/widget/
