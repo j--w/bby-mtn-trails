@@ -1,2 +1,0 @@
-import{a,b,c,d,e,f,g,h,i,j,k,l,m}from"../chunks/chunk-3PJBM2QI.js";import"../chunks/chunk-KVMUXFPB.js";export{g as HRDEM_ATTRIBUTION,f as HRDEM_BASE,l as SMOOTHING,b as TERRARIUM_ATTRIBUTION,a as TERRARIUM_URL,c as decodeTerrarium,j as hrdemSource,i as hrdemTileId,k as sampleElevations,m as smoothAlongSegments,e as terrariumSource,d as tileXY,h as toCanadaLambert};
-//# sourceMappingURL=elevation.js.map
