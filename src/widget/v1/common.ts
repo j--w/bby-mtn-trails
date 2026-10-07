@@ -1,23 +1,26 @@
 // What the widgets share: Leaflet loading, the theme tokens and base styles (everything scoped under .tw), map
 // layers and small helpers. Hosts restyle both widgets with --tw-accent, --tw-accent-soft, --tw-font, --tw-radius and
 // --tw-radius-sm on any ancestor.
+import type * as Leaflet from 'leaflet';
 import { WidgetError } from './model.js';
 
 const LEAFLET = {
   css: ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css', 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY='],
   js: ['https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js', 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo='],
 };
-let leaflet = null;
-export function loadLeaflet() {
-  if (globalThis.L?.map) return Promise.resolve(globalThis.L);
+type LeafletNS = typeof Leaflet;
+const page = globalThis as { L?: LeafletNS };
+let leaflet: Promise<LeafletNS> | null = null;
+export function loadLeaflet(): Promise<LeafletNS> {
+  if (page.L?.map) return Promise.resolve(page.L);
   if (leaflet) return leaflet;
   if (!document.querySelector('link[href*="leaflet"]')) {
     const l = Object.assign(document.createElement('link'), { rel: 'stylesheet', href: LEAFLET.css[0], integrity: LEAFLET.css[1], crossOrigin: 'anonymous' });
     document.head.appendChild(l);
   }
-  return leaflet = new Promise((ok, fail) => {
+  return leaflet = new Promise<LeafletNS>((ok, fail) => {
     const s = Object.assign(document.createElement('script'), { src: LEAFLET.js[0], integrity: LEAFLET.js[1], crossOrigin: 'anonymous' });
-    s.onload = () => ok(globalThis.L); s.onerror = () => { leaflet = null; fail(new WidgetError('map-unavailable', 'The map library couldn’t load.')); };
+    s.onload = () => ok(page.L!); s.onerror = () => { leaflet = null; fail(new WidgetError('map-unavailable', 'The map library couldn’t load.')); };
     document.head.appendChild(s);
   });
 }
@@ -72,25 +75,25 @@ const BASE_CSS = `
   .tw-mapcol{order:1;height:min(65vh,460px);min-height:300px;flex:none}
 }
 @media (prefers-reduced-motion:reduce){.tw *{transition:none!important;animation:none!important}}`;
-export function addStyles(id, css) {
+export function addStyles(id: string, css: string) {
   if (!document.getElementById('trails-widget-v1')) document.head.appendChild(Object.assign(document.createElement('style'), { id: 'trails-widget-v1', textContent: BASE_CSS }));
   if (id && !document.getElementById(id)) document.head.appendChild(Object.assign(document.createElement('style'), { id, textContent: css }));
 }
 
 // Streets and topo tiles with a switcher and a metric scale.
-export function baseLayers(L, map) {
+export function baseLayers(L: LeafletNS, map: Leaflet.Map) {
   const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' });
   const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM · style © <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' });
   osm.addTo(map);
-  L.control.layers({ Streets: osm, Topo: topo }, null, { position: 'topright' }).addTo(map);
+  L.control.layers({ Streets: osm, Topo: topo }, undefined, { position: 'topright' }).addTo(map);
   L.control.scale({ imperial: false }).addTo(map);
 }
 
-export const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-export const themeOf = t => t === 'light' || t === 'dark' ? t : 'auto';
+export const esc = (s: unknown) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' } as Record<string, string>)[c]);
+export const themeOf = (t?: string) => t === 'light' || t === 'dark' ? t : 'auto';
 
 // Save text as a file.
-export function download(text, name, type) {
+export function download(text: string, name: string, type: string) {
   const url = URL.createObjectURL(new Blob([text], { type }));
   const a = Object.assign(document.createElement('a'), { href: url, download: name });
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);

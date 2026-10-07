@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
+import * as core from '../site/js/router-core.js';
 import { readArea, trailheads, trailheadList, resolveParams, problem, solverParams, toRoute, WidgetError } from '../site/widget/v1/model.js';
 
 const load = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
@@ -10,10 +10,6 @@ const data = load('fixtures/burnaby-legacy.json');
 const pkg = { format: 'trail-area', version: 1, name: 'Test area', bbox: [0, 0, 0, 0], attribution: ['OSM', 'Elevation: test'], edits: {}, data };
 
 // router-core as the widget's worker runs it
-const ctx = vm.createContext({ Math, Map, Set, Float64Array, Uint8Array, Infinity, Number, Array, Object });
-vm.runInContext(readFileSync(new URL('../site/js/router-core.js', import.meta.url), 'utf8') +
-  '\nthis.api={setGraph,buildGraph,workerGraph,solve,solveLongest,routeGeometry,reachableKm};', ctx);
-const core = ctx.api;
 const graph = core.buildGraph(data);
 core.setGraph(core.workerGraph(graph));
 const starts = data.th.map(t => graph.J(t.node));
@@ -85,7 +81,7 @@ test('laps come back through the start', () => {
 
 test('longest mode names its options', () => {
   const routes = search(resolveParams(trailheads(pkg), { mode: 'longest' }));
-  assert.deepEqual([...routes.map(r => r.id)].sort(), ['every-trail', 'no-repeats', 'skip-dead-ends']);
+  assert.deepEqual(routes.map(r => r.id).sort(), ['every-trail', 'no-repeats', 'skip-dead-ends']);
   assert.ok(routes.every(r => r.description.length > 0));
 });
 

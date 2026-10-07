@@ -2,12 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import vm from 'node:vm';
-
-const core = readFileSync(new URL('../site/js/router-core.js', import.meta.url), 'utf8');
-const ctx = vm.createContext({ Math, Map, Set, Float64Array, Uint8Array, Infinity, Number, Array, Object });
-vm.runInContext(core + '\nthis.api={setGraph,buildGraph,workerGraph,solve,solveLongest};', ctx);
-const { setGraph, buildGraph, workerGraph, solve, solveLongest } = ctx.api;
+import { setGraph, buildGraph, workerGraph, solve, solveLongest } from '../site/js/router-core.js';
 
 const DATA = JSON.parse(readFileSync(new URL('fixtures/burnaby-legacy.json', import.meta.url), 'utf8'));
 const g = buildGraph(DATA);

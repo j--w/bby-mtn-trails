@@ -1,0 +1,19 @@
+{
+  // src/ (TypeScript) compiles to site/ next to the HTML; the emitted .js and .d.ts are build output, not committed.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["leaflet"],
+    "rootDir": "src",
+    "outDir": "site",
+    "declaration": true,
+    "strict": true,
+    "noImplicitAny": false,
+    "skipLibCheck": true,
+    "removeComments": false,
+    "newLine": "lf"
+  },
+  "include": ["src"]
+}

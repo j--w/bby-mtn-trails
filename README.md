@@ -11,11 +11,14 @@ curate it. Routes are drawn on OpenStreetMap tiles with an elevation profile and
 ## Run it locally
 
 ```bash
-npm run serve        # then open http://localhost:8000 (needs Python 3)
-npm test             # route search tests (Node 20+)
+npm install          # TypeScript (dev only)
+npm run serve        # build, then open http://localhost:8000 (needs Python 3)
+npm run watch        # rebuild as you edit src/
+npm test             # build, then the tests (Node 20+)
 ```
 
-The pages load JSON with `fetch`, so open them through a local server, not as `file://`.
+The code is TypeScript in `src/`; `npm run build` compiles it into `site/` next to the HTML (no bundler). The pages
+load JSON with `fetch`, so open them through a local server, not as `file://`.
 
 ## Areas
 
@@ -27,7 +30,8 @@ area file or open it in the route builder), or open a `.trails.json` someone sha
 
 There are two widgets you can put in your own page or app: the route builder (`trails-widget.js`) and area setup
 (`setup-widget.js`). They're separate so a page that only builds routes doesn't load setup. Each draws into one
-element and lays itself out there, so give the element a height. Types are in `site/widget/v1/trails-widget.d.ts`.
+element and lays itself out there, so give the element a height. Types are in `trails-widget.d.ts` next to it
+(generated from `src/widget/v1/`).
 
 ```html
 <div id="routes" style="height: 640px"></div>
@@ -49,7 +53,7 @@ element and lays itself out there, so give the element a height. Types are in `s
 The same area and `params` (seed included) always give the same route, so store `route.params` and rebuild from
 it. Without `onExport` the widget offers a GPX download instead.
 
-Area setup works the same way (types in `site/widget/v1/setup-widget.d.ts`). Your app can pass the runner's GPS
+Area setup works the same way (types in `setup-widget.d.ts`). Your app can pass the runner's GPS
 tracks, which show which trails they use and what OpenStreetMap is missing, and gets the finished area back:
 
 ```js
