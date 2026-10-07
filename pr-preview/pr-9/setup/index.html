@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<title>Set Up an Area</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+<style>
+/* Setup: a step panel beside the map. Same tokens as the route builder (Training Tracker look). */
+:root{
+  color-scheme:light;
+  --bg:#f5f6f8; --surface:#ffffff; --surface-hover:#fafbfc; --text:#17202b; --muted:#5d6775; --faint:#8a93a0;
+  --border:#dde1e7; --border-strong:#c7cdd5; --grid:#eceff3;
+  --accent:#2155cc; --accent-soft:#e9effc; --on-accent:#ffffff;
+  --done:#1b7f45; --done-soft:#e5f4ea; --partial:#a85f00; --partial-soft:#fcf0dc;
+  --font:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --radius:10px; --radius-sm:8px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --bg:#0f141b; --surface:#171d26; --surface-hover:#1c2330; --text:#e6eaf0; --muted:#9aa4b2; --faint:#6c7685;
+  --border:#2a3240; --border-strong:#3a4454; --grid:#222a36;
+  --accent:#7aa2ff; --accent-soft:#1d2a47; --on-accent:#0f141b;
+  --done:#5cc98a; --done-soft:#17301f; --partial:#f0a54a; --partial-soft:#3a2a12}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0f141b; --surface:#171d26; --surface-hover:#1c2330; --text:#e6eaf0; --muted:#9aa4b2; --faint:#6c7685;
+  --border:#2a3240; --border-strong:#3a4454; --grid:#222a36;
+  --accent:#7aa2ff; --accent-soft:#1d2a47; --on-accent:#0f141b;
+  --done:#5cc98a; --done-soft:#17301f; --partial:#f0a54a; --partial-soft:#3a2a12;
+ }
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.45 var(--font);-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+p{margin:0}
+.muted{color:var(--muted)} .small{font-size:13px} .num{font-variant-numeric:tabular-nums}
+.app{height:100%;display:grid;grid-template-columns:380px minmax(0,1fr)}
+aside{background:var(--surface);border-right:1px solid var(--border);overflow:auto;padding:20px 20px 32px;display:flex;flex-direction:column;gap:20px;min-width:0}
+.head h1{margin:0;font-size:22px;line-height:1.2}
+.head p{margin-top:2px;color:var(--muted);font-size:14px}
+.head a{color:var(--accent)}
+.steps{display:flex;gap:6px;font-size:13px;font-weight:600;color:var(--faint)}
+.steps span[aria-current="step"]{color:var(--accent)}
+.section-title{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.stack{display:flex;flex-direction:column;gap:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:0 16px;flex:1 1 auto;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface);font-weight:500;cursor:pointer;text-decoration:none;color:inherit}
+.button:hover{background:var(--surface-hover)}
+.button:disabled{opacity:.6;cursor:default}
+.button.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent);font-weight:600}
+.button.quiet{border-color:transparent;color:var(--accent);flex:0 1 auto}
+.button.sm{min-height:34px;padding:0 10px;font-size:14px;flex:none}
+.seg{display:flex;gap:2px;padding:3px;border-radius:9px;background:var(--grid)}
+.seg button{flex:1;min-height:36px;padding:6px 8px;border:0;border-radius:7px;background:none;font-size:14px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.seg button[aria-pressed="true"]{background:var(--surface);color:var(--text);font-weight:600;box-shadow:0 1px 2px rgba(23,32,43,.12)}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;font-weight:600;color:var(--muted)}
+input[type=text]{font-size:16px;font-weight:400;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-sm);min-height:44px;padding:0 12px;width:100%}
+input.inline{min-height:34px;font-size:14px}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer}
+.notice{border-radius:var(--radius-sm);padding:10px 12px;font-size:14px;background:var(--partial-soft);color:var(--text)}
+.notice.ok{background:var(--done-soft)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--grid);border-radius:var(--radius-sm);padding:8px 10px}
+.stat b{display:block;font-size:18px;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted)}
+.list{display:flex;flex-direction:column;gap:6px}
+.item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;align-items:center;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px}
+.item .what{font-size:14px}
+.item .what small{display:block;color:var(--muted);font-size:12px}
+.legend{display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:13px;color:var(--muted);align-items:center}
+.sw{width:22px;height:0;border-top:4px solid}
+.toast{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);z-index:1000;max-width:calc(100% - 32px);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:var(--radius-sm);font-size:14px;box-shadow:0 6px 20px rgba(23,32,43,.2)}
+.busy{position:absolute;left:50%;top:16px;transform:translateX(-50%);z-index:1000;background:var(--surface);color:var(--text);padding:10px 14px;border-radius:var(--radius-sm);font-size:14px;font-weight:600;box-shadow:0 2px 8px rgba(23,32,43,.15)}
+.hint{position:absolute;left:54px;top:10px;right:60px;z-index:1000;pointer-events:none}
+.hint span{display:inline-block;background:var(--surface);color:var(--text);padding:6px 10px;border-radius:var(--radius-sm);font-size:13px;box-shadow:0 1px 4px rgba(23,32,43,.2)}
+.mapwrap{position:relative;min-height:0}
+#map{position:absolute;inset:0;background:var(--grid)}
+#map.picking,#map.cross{cursor:crosshair}
+#map.hit{cursor:pointer}
+body.leaflet-dragging #map{cursor:grabbing}
+.item.focus{border-color:var(--accent);background:var(--accent-soft)}
+.leaflet-container{font:inherit}
+.leaflet-tooltip.thlab{font-weight:700;font-size:12px;padding:2px 6px}
+footer{margin-top:auto;font-size:12px;color:var(--faint)}
+footer a{color:inherit}
+@media (max-width:820px){
+  .app{display:flex;flex-direction:column;height:auto}
+  aside{border-right:0;overflow:visible;order:2}
+  .mapwrap{order:1;height:65vh;flex:none}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <div class="head">
+      <h1>Set up an area</h1>
+      <p>Pick the trails you run, then build routes on them. <a href="../">Back to routes</a></p>
+    </div>
+    <div class="steps" aria-label="Steps"><span id="st-area">1 Area</span>·<span id="st-trails">2 Trails</span>·<span id="st-save">3 Save</span></div>
+
+    <section id="p-area" class="stack">
+      <p class="small muted">Move the map to the trails you want, then mark the area. Keep it to the trail network and a little road around it.</p>
+      <div class="row"><button class="button" id="draw">Mark two corners</button><button class="button" id="useview">Use this view</button></div>
+      <p class="small num" id="areainfo"></p>
+      <div class="notice" id="areawarn" hidden></div>
+      <button class="button primary" id="loadbtn" disabled>Load trails</button>
+      <div class="row">
+        <button class="button quiet" id="resume" hidden></button>
+        <label class="button quiet" style="cursor:pointer">Open an area file<input type="file" id="openfile" accept=".json,application/json" hidden></label>
+        <button class="button quiet" id="editbuiltin">Edit Burnaby Mountain</button>
+      </div>
+    </section>
+
+    <section id="p-trails" class="stack" hidden>
+      <div class="stats">
+        <div class="stat"><b id="s-km">0</b><span>km routable</span></div>
+        <div class="stat"><b id="s-th">0</b><span>trailheads</span></div>
+        <div class="stat"><b id="s-sug">0</b><span>suggestions</span></div>
+      </div>
+      <div class="seg" role="group" aria-label="Tool">
+        <button type="button" data-tool="select" aria-pressed="true">Trails</button>
+        <button type="button" data-tool="trailhead" aria-pressed="false">Trailhead</button>
+        <button type="button" data-tool="split" aria-pressed="false">Split</button>
+        <button type="button" data-tool="join" aria-pressed="false">Join</button>
+        <button type="button" data-tool="draw" aria-pressed="false">Draw</button>
+      </div>
+      <p class="small muted" id="toolhelp"></p>
+      <div class="row" id="drawbar" hidden><button class="button sm primary" id="drawdone" disabled>Finish path</button><button class="button sm" id="drawback" disabled>Remove last point</button><button class="button sm quiet" id="drawcancel">Cancel</button></div>
+      <div class="notice" id="thwarn" hidden>Add at least one trailhead: pick the Trailhead tool and tap where runs start, or tap a P on the map.</div>
+      <div>
+        <h2 class="section-title">Trailheads</h2>
+        <div class="list" id="thlist"></div>
+      </div>
+      <div id="drawnwrap" hidden>
+        <h2 class="section-title">Drawn paths</h2>
+        <div class="list" id="drawnlist"></div>
+      </div>
+      <div>
+        <h2 class="section-title">GPS tracks</h2>
+        <p class="small muted" style="margin-bottom:6px">Load GPX files of your runs to add the trails you use and the bits OpenStreetMap is missing. Tracks aren't saved in the area file.</p>
+        <div class="list" id="gpxres"></div>
+        <div class="row" style="margin-top:6px"><label class="button sm" style="cursor:pointer">Load GPX<input type="file" id="gpxfile" accept=".gpx,application/gpx+xml" multiple hidden></label><button class="button sm quiet" id="gpxclear" hidden>Remove tracks</button></div>
+      </div>
+      <div>
+        <h2 class="section-title">Suggested connectors</h2>
+        <p class="small muted" style="margin-bottom:6px">Short road or path links that join trails up. Add the ones you'd run.</p>
+        <div class="list" id="sugglist"></div>
+      </div>
+      <label class="check"><input type="checkbox" id="showsugg" checked> Show suggestions on the map (tap one to add it)</label>
+      <label class="check"><input type="checkbox" id="showroads"> Show roads and sidewalks</label>
+      <div class="legend">
+        <span class="sw" style="border-color:#2155cc"></span><span>Routable trails</span>
+        <span class="sw" style="border-color:#a85f00;border-top-style:dashed"></span><span>Added to close a gap</span>
+        <span class="sw" style="border-color:#c2410c;border-top-style:dotted"></span><span>Chosen, but not joined to a trailhead</span>
+        <span class="sw" style="border-color:#8a93a0;border-top-width:2px"></span><span>Not used (tap to add)</span>
+        <span class="sw" style="border-color:#7b3fb4"></span><span>Suggested connector</span>
+        <span class="sw" style="border-color:#d6336c;border-top-width:2px"></span><span>Your GPS track (dashed: missing from OpenStreetMap)</span>
+      </div>
+      <div class="row"><button class="button" id="undo" disabled>Undo</button><button class="button" id="back1">Change area</button></div>
+      <button class="button primary" id="tosave">Next: save</button>
+    </section>
+
+    <section id="p-save" class="stack" hidden>
+      <label class="f">Area name<input type="text" id="name" maxlength="60" placeholder="e.g. Burnaby Mountain"></label>
+      <p class="small muted" id="savesum"></p>
+      <div class="notice" id="savewarn" hidden></div>
+      <button class="button primary" id="openrb">Build routes here</button>
+      <button class="button" id="download">Download area file</button>
+      <p class="small muted">The area file holds your trails, edits and the OpenStreetMap snapshot. Open it here later to keep editing, or share it.</p>
+      <button class="button quiet" id="back2">Back to trails</button>
+    </section>
+
+    <footer id="attr">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors (ODbL).</footer>
+  </aside>
+  <div class="mapwrap">
+    <div id="map" aria-label="Map"></div>
+    <div class="hint" id="hint" hidden><span></span></div>
+    <div class="busy" id="busy" hidden></div>
+    <div class="toast" id="toast" hidden></div>
+  </div>
+</div>
+
+<script type="module">
+import { fetchOsm, parseOsm, bboxKm2, nodeIndex } from '../js/osm.js';
+import { sampleElevations, hrdemSource, terrariumSource, smoothAlongSegments, SMOOTHING, HRDEM_ATTRIBUTION, TERRARIUM_ATTRIBUTION } from '../js/elevation.js';
+import { makePackage, readPackage, emptyEdits, keyOf, withDrawn } from '../js/area-package.js';
+import { parseGpx, matchTrack } from '../js/gpx.js';
+import { loadArea, saveArea } from '../js/area-store.js';
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const WARN_KM2 = 30, MAX_KM2 = 120;
+// Tiles are light in both themes, so overlays use fixed light-theme colours.
+const MC = { in: '#2155cc', auto: '#a85f00', cut: '#c2410c', off: '#8a93a0', road: '#b0b8c4', sugg: '#7b3fb4', track: '#d6336c', ink: '#17202b' };
+
+// one set of sources so the LiDAR file headers are read once per page
+const ELE_SOURCES = [hrdemSource(), terrariumSource()];
+// raw: the OSM network as loaded; view: raw plus drawn paths (what piece paths and node keys refer to)
+const S = { step: 'area', bbox: null, raw: null, view: null, keyIdx: null, focus: null, drawPts: [], tracks: [], match: null, edits: emptyEdits(), name: '', ele: null, osmTimestamp: null,
+  res: null, pieces: [], tool: 'select', undo: [], joinFrom: null, corners: [], picking: false };
+
+/* ---------- map ---------- */
+const map = L.map('map', { zoomSnap: 0.25, preferCanvas: true, renderer: L.canvas({ tolerance: 4 }) }).setView([49.278, -122.92], 13);
+const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }).addTo(map);
+const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { maxZoom: 17, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM · style © <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' });
+L.control.layers({ 'Streets': osm, 'Topo': topo }, null, { position: 'topright' }).addTo(map);
+L.control.scale({ imperial: false }).addTo(map);
+const boxLayer = L.layerGroup().addTo(map), drawLayer = L.layerGroup(), hoverLayer = L.layerGroup(), pieceLayer = L.layerGroup().addTo(map), extraLayer = L.layerGroup().addTo(map),
+  poiLayer = L.layerGroup().addTo(map), thLayer = L.layerGroup().addTo(map);
+const trackLayer = L.layerGroup().addTo(map);
+drawLayer.addTo(map); hoverLayer.addTo(map);
+const lines = new Map();   // piece id -> polyline
+
+/* ---------- helpers ---------- */
+let toastT; function toast(m) { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 3200); }
+function busy(m) { $('busy').hidden = !m; $('busy').textContent = m || ''; }
+function hint(m) { $('hint').hidden = !m; $('hint').firstElementChild.textContent = m || ''; }
+const LL = i => [S.view.nodes[i][0], S.view.nodes[i][1]];
+const fmtKm = m => (m / 1000).toFixed(m < 10000 ? 1 : 0);
+function setStep(step) {
+  S.step = step;
+  for (const s of ['area', 'trails', 'save']) { $('p-' + s).hidden = s !== step; $('st-' + s).toggleAttribute('aria-current', s === step); if (s === step) $('st-' + s).setAttribute('aria-current', 'step'); }
+  boxLayer.eachLayer(l => l.setStyle?.({ opacity: step === 'area' ? 1 : 0.35, fillOpacity: step === 'area' ? 0.06 : 0 }));
+  if (step !== 'area') stopPicking();
+  $('map').classList.toggle('cross', step === 'trails' && S.tool !== 'select');
+  if (step === 'trails') setTool(S.tool);
+  else hint('');
+}
+
+/* ---------- step 1: area ---------- */
+function setBox(b) {
+  S.bbox = b.map(v => Math.round(v * 1e5) / 1e5);
+  boxLayer.clearLayers();
+  L.rectangle([[b[0], b[1]], [b[2], b[3]]], { color: MC.in, weight: 2, fillOpacity: 0.06, interactive: false }).addTo(boxLayer);
+  const km2 = bboxKm2(S.bbox);
+  $('areainfo').textContent = `${km2.toFixed(1)} km² selected`;
+  $('areawarn').hidden = km2 <= WARN_KM2;
+  $('areawarn').textContent = km2 > MAX_KM2 ? `That's too big to load (over ${MAX_KM2} km²). Mark a smaller area.` : 'That\'s a big area. It works, but loading and editing will be slower.';
+  $('loadbtn').disabled = km2 > MAX_KM2;
+}
+function stopPicking() { S.picking = false; S.corners = []; $('map').classList.remove('picking'); if (S.step === 'area') hint(''); }
+$('draw').onclick = () => { S.picking = true; S.corners = []; $('map').classList.add('picking'); hint('Tap one corner of the area, then the opposite corner.'); };
+$('useview').onclick = () => {
+  const b = map.getBounds().pad(-0.04);
+  setBox([b.getSouth(), b.getWest(), b.getNorth(), b.getEast()]); stopPicking();
+};
+$('loadbtn').onclick = () => loadTrails().catch(err => { busy(''); toast(err.message); $('loadbtn').disabled = false; });
+
+async function loadTrails() {
+  $('loadbtn').disabled = true;
+  busy('Loading trails from OpenStreetMap…');
+  const json = await fetchOsm(S.bbox);
+  const raw = parseOsm(json);
+  if (!raw.ways.some(w => w.layer === 'trail')) throw new Error('No trails in OpenStreetMap here. Try a different area.');
+  busy(`Reading elevations for ${raw.nodes.length.toLocaleString()} points…`);
+  const { ele, source } = await sampleElevations(raw.nodes.map(n => [n[0], n[1]]), ELE_SOURCES);
+  const missing = fillElevations(raw, ele);
+  const sources = {};
+  source.forEach(s => { if (s) sources[s] = (sources[s] || 0) + 1; });
+  S.ele = { sources, missing };
+  S.osmTimestamp = json.osm3s?.timestamp_osm_base || null;
+  S.edits = emptyEdits(); S.undo = [];
+  S.name = '';
+  await startEditing(raw);
+  busy('');
+  if (missing) toast(`No elevation for ${missing} points; they use their neighbours' height.`);
+  await saveArea('draft', { bbox: S.bbox, raw, ele: S.ele, osmTimestamp: S.osmTimestamp, edits: S.edits, name: S.name });
+}
+// Points no source covered take the height of a neighbour along their way.
+function fillElevations(raw, ele) {
+  raw.nodes.forEach((n, i) => n[2] = ele[i]);
+  let missing = ele.filter(v => v === null).length;
+  for (let pass = 0; pass < 50 && raw.nodes.some(n => n[2] === null); pass++)
+    for (const w of raw.ways) for (let k = 0; k < w.path.length; k++) {
+      const n = raw.nodes[w.path[k]];
+      if (n[2] !== null) continue;
+      const nb = [w.path[k - 1], w.path[k + 1]].filter(j => j !== undefined && raw.nodes[j][2] !== null);
+      if (nb.length) n[2] = nb.reduce((s, j) => s + raw.nodes[j][2], 0) / nb.length;
+    }
+  raw.nodes.forEach(n => { if (n[2] === null) n[2] = 0; });
+  return missing;
+}
+
+/* ---------- compile in a worker ---------- */
+const worker = new Worker('../js/area-worker.js', { type: 'module' });
+let reqId = 0, compileT = null, needPieces = true;
+worker.onmessage = e => {
+  const m = e.data;
+  if (m.id !== reqId) return;
+  busy('');
+  if (m.error) { toast('Something went wrong building the network: ' + m.error); return; }
+  if (m.pieces) { S.pieces = m.pieces; drawPieces(); matchTracks(); }
+  S.res = m;
+  render();
+};
+function compile(withPieces = false) {
+  needPieces ||= withPieces;
+  clearTimeout(compileT);
+  S.view = withDrawn(S.raw, S.edits.drawn); S.keyIdx = nodeIndex(S.view);
+  compileT = setTimeout(() => { worker.postMessage({ id: ++reqId, edits: S.edits, withPieces: needPieces }); needPieces = false; }, 80);
+}
+async function startEditing(raw) {
+  S.raw = raw; S.view = withDrawn(raw, S.edits.drawn); S.keyIdx = nodeIndex(S.view); S.focus = null; S.drawPts = []; S.tracks = []; matchTracks();
+  worker.postMessage({ raw });
+  drawPois();
+  setStep('trails');
+  busy('Building the network…');
+  compile(true);
+  const b = S.bbox; map.fitBounds([[b[0], b[1]], [b[2], b[3]]], { padding: [20, 20] });
+}
+
+/* ---------- step 2: drawing ---------- */
+function drawPieces() {
+  pieceLayer.clearLayers(); lines.clear();
+  for (const p of S.pieces) lines.set(p.id, L.polyline(p.path.map(LL), { interactive: false }).addTo(pieceLayer));
+  buildPickGrid();
+}
+function styleFor(p, state) {
+  const showRoads = $('showroads').checked;
+  if (state === 'in') return { color: MC.in, weight: 3.5, opacity: 0.95, dashArray: null };
+  if (state === 'auto') return { color: MC.auto, weight: 3.5, opacity: 0.95, dashArray: '6 5' };
+  if (state === 'cut') return { color: MC.cut, weight: 3, opacity: 0.9, dashArray: '2 5' };
+  if (p.layer === 'road') return { color: MC.road, weight: 2, opacity: showRoads ? 0.9 : 0, dashArray: null };
+  return { color: MC.off, weight: 2, opacity: 0.8, dashArray: null };
+}
+function render() {
+  const r = S.res; if (!r) return;
+  for (const p of S.pieces) lines.get(p.id)?.setStyle(styleFor(p, r.states[p.id]));
+  extraLayer.clearLayers();
+  if ($('showsugg').checked) for (const s of r.suggestions) for (const id of s.pieces) {
+    const p = S.pieces.find(q => q.id === id), on = s.id === S.focus;
+    if (p) L.polyline(p.path.map(LL), { color: MC.sugg, weight: on ? 9 : 6, opacity: on ? 0.9 : 0.5, interactive: false }).addTo(extraLayer);
+  }
+  for (const [a, b] of [...r.joins, ...r.snaps]) L.polyline([LL(a), LL(b)], { color: MC.ink, weight: 2, dashArray: '2 4', interactive: false }).addTo(extraLayer);
+  if (S.joinFrom != null) L.circleMarker(LL(S.joinFrom), { radius: 7, color: MC.ink, weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(extraLayer);
+  drawTrailheads();
+  const onNet = new Set(r.provisional ? [] : r.trailheads.map(t => t.node));
+  const thOk = S.edits.trailheads.filter(t => onNet.has(S.keyIdx.get(String(t.node)))).length;
+  $('s-km').textContent = fmtKm(r.keptM);
+  $('s-th').textContent = thOk;
+  $('s-sug').textContent = r.suggestions.length;
+  $('thwarn').hidden = thOk > 0;
+  renderThList(onNet);
+  renderSuggestions();
+  renderDrawn();
+  renderGpx();
+  $('undo').disabled = !S.undo.length;
+}
+function drawTrailheads() {
+  thLayer.clearLayers();
+  S.edits.trailheads.forEach((t, i) => {
+    const n = S.keyIdx.get(String(t.node)); if (n === undefined) return;
+    L.circleMarker(LL(n), { radius: 7, color: '#fff', weight: 2.5, fillColor: MC.ink, fillOpacity: 1, interactive: false })
+      .bindTooltip(t.name || `Trailhead ${i + 1}`, { permanent: true, direction: 'right', offset: [8, 0], className: 'thlab' }).addTo(thLayer);
+  });
+}
+function drawPois() {
+  poiLayer.clearLayers();
+  for (const p of S.raw.pois.filter(p => p.kind === 'parking' || p.kind === 'trailhead')) {
+    L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', iconSize: [18, 18], html: `<div style="width:18px;height:18px;border-radius:4px;background:#2155cc;color:#fff;font:700 12px/18px system-ui;text-align:center">${p.kind === 'parking' ? 'P' : 'T'}</div>` }), title: (p.name || (p.kind === 'parking' ? 'Parking' : 'Trailhead')) + ': tap to make this a trailhead' })
+      .on('click', () => addTrailheadNear(L.latLng(p.lat, p.lon), p.name || '')).addTo(poiLayer);
+  }
+}
+function renderThList(onNet) {
+  const el = $('thlist');
+  if (!S.edits.trailheads.length) { el.innerHTML = '<p class="small muted">None yet.</p>'; return; }
+  el.innerHTML = S.edits.trailheads.map((t, i) => `<div class="item"><input class="inline" type="text" data-th="${i}" value="${esc(t.name)}" placeholder="Trailhead ${i + 1}" aria-label="Trailhead name">
+    <button class="button quiet sm" data-thdel="${i}" aria-label="Remove trailhead">Remove</button>${onNet.has(S.keyIdx.get(String(t.node))) ? '' : '<small class="muted small" style="grid-column:1/-1">Not on a routable trail</small>'}</div>`).join('');
+  el.querySelectorAll('[data-th]').forEach(inp => inp.onchange = () => { edit(e => { e.trailheads[+inp.dataset.th].name = inp.value.trim(); }); });
+  el.querySelectorAll('[data-thdel]').forEach(b => b.onclick = () => edit(e => { e.trailheads.splice(+b.dataset.thdel, 1); }));
+}
+function renderSuggestions() {
+  const el = $('sugglist'), all = S.res.suggestions, fi = all.findIndex(x => x.id === S.focus);
+  const list = all.slice(0, 8).map((x, i) => [x, i]);
+  if (fi >= 8) list.push([all[fi], fi]);
+  if (!list.length) { el.innerHTML = '<p class="small muted">Nothing to suggest.</p>'; return; }
+  el.innerHTML = list.map(([s, i]) => `<div class="item${s.id === S.focus ? ' focus' : ''}"><span class="what">${s.kind === 'island' ? `Join ${fmtKm(s.joins)} km of trail` : 'Link a dead end'}<small>${Math.round(s.m)} m of ${describe(s)}</small></span>
+    <span class="row"><button class="button quiet sm" data-show="${i}">Show</button><button class="button sm" data-add="${i}">Add</button><button class="button quiet sm" data-no="${i}" aria-label="Dismiss">No</button></span></div>`).join('');
+  el.querySelectorAll('[data-show]').forEach(b => b.onclick = () => { const s = all[+b.dataset.show]; S.focus = s.id; showSuggestion(s); render(); });
+  el.querySelectorAll('[data-add]').forEach(b => b.onclick = () => addSuggestion(+b.dataset.add));
+  el.querySelectorAll('[data-no]').forEach(b => b.onclick = () => { const i = +b.dataset.no; edit(e => { e.dismissed.push(all[i].id); }); });
+}
+function showSuggestion(s) {
+  map.fitBounds(L.latLngBounds(s.pieces.flatMap(id => S.pieces.find(p => p.id === id)?.path.map(LL) || [])).pad(2), { maxZoom: 16 });
+}
+// add every piece of suggestion i
+function addSuggestion(i) {
+  const s = S.res.suggestions[i]; if (!s) return;
+  edit(e => { for (const id of s.pieces) e.pieces[id] = true; });
+}
+function renderDrawn() {
+  const d = S.edits.drawn;
+  $('drawnwrap').hidden = !d.length;
+  $('drawnlist').innerHTML = d.map((p, i) => `<div class="item"><input class="inline" type="text" data-dname="${i}" value="${esc(p.name)}" placeholder="Drawn path ${i + 1}" aria-label="Path name">
+    <span class="row"><button class="button quiet sm" data-dshow="${i}">Show</button><button class="button quiet sm" data-ddel="${i}">Remove</button></span></div>`).join('');
+  const pathOf = i => S.pieces.filter(p => p.way === d[i].id).flatMap(p => p.path.map(LL));
+  $('drawnlist').querySelectorAll('[data-dname]').forEach(inp => inp.onchange = () => edit(e => { e.drawn[+inp.dataset.dname].name = inp.value.trim(); }, { pieces: true }));
+  $('drawnlist').querySelectorAll('[data-dshow]').forEach(b => b.onclick = () => { const ll = pathOf(+b.dataset.dshow); if (ll.length) map.fitBounds(L.latLngBounds(ll).pad(1.5), { maxZoom: 17 }); });
+  $('drawnlist').querySelectorAll('[data-ddel]').forEach(b => b.onclick = () => edit(e => { e.drawn.splice(+b.dataset.ddel, 1); }, { pieces: true }));
+}
+$('showsugg').onchange = render;
+function describe(s) {
+  const kinds = new Set(s.pieces.map(id => S.pieces.find(p => p.id === id)?.hw));
+  const names = [...new Set(s.pieces.map(id => S.pieces.find(p => p.id === id)?.name).filter(Boolean))];
+  const k = kinds.has('footway') && kinds.size === 1 ? 'path or sidewalk' : [...kinds].some(h => /residential|service|tertiary|unclassified|living_street/.test(h)) ? 'road' : 'path';
+  return k + (names.length ? ` (${names.slice(0, 2).join(', ')})` : '');
+}
+$('showroads').onchange = render;
+
+/* ---------- step 2: editing ---------- */
+function edit(fn, { pieces = false } = {}) {
+  S.undo.push(JSON.stringify(S.edits));
+  if (S.undo.length > 100) S.undo.shift();
+  fn(S.edits);
+  compile(pieces);
+  saveDraft();
+}
+$('undo').onclick = () => { if (!S.undo.length) return; S.edits = JSON.parse(S.undo.pop()); compile(true); saveDraft(); };
+let draftT; function saveDraft() { clearTimeout(draftT); draftT = setTimeout(() => saveArea('draft-edits', { edits: S.edits, name: S.name }), 400); }
+
+const HELP = {
+  select: 'Tap a trail to add it or take it out. Grey lines are paths not in your network yet.',
+  trailhead: 'Tap where runs start (or a P on the map). Name them in the list.',
+  split: 'Tap a point on a trail to cut it there, so you can keep only part of it.',
+  join: 'Tap two points to link them with a short straight connector, where OpenStreetMap leaves a gap.',
+  draw: 'Tap along a path OpenStreetMap is missing. Start and end on a trail so it joins up, then tap the last point again or Finish.',
+};
+function setTool(t) {
+  S.tool = t; S.joinFrom = null; S.drawPts = []; drawSketch();
+  $('drawbar').hidden = t !== 'draw';
+  $('map').classList.toggle('cross', S.step === 'trails' && t !== 'select');
+  if (t === 'draw') map.doubleClickZoom.disable(); else map.doubleClickZoom.enable();
+  document.querySelectorAll('[data-tool]').forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === t));
+  $('toolhelp').textContent = HELP[t];
+  hint(t === 'select' ? '' : HELP[t]);
+  if (S.res) render();
+}
+document.querySelectorAll('[data-tool]').forEach(b => b.onclick = () => setTool(b.dataset.tool));
+
+// grid of piece segments in degrees for hit testing taps
+let grid = new Map(); const GC = 0.002;
+function buildPickGrid() {
+  grid = new Map();
+  S.pieces.forEach((p, pi) => { for (let k = 1; k < p.path.length; k++) {
+    const [a, b] = [S.view.nodes[p.path[k - 1]], S.view.nodes[p.path[k]]];
+    for (let x = Math.floor(Math.min(a[1], b[1]) / GC); x <= Math.floor(Math.max(a[1], b[1]) / GC); x++)
+      for (let y = Math.floor(Math.min(a[0], b[0]) / GC); y <= Math.floor(Math.max(a[0], b[0]) / GC); y++) {
+        const key = x + ',' + y; if (!grid.has(key)) grid.set(key, []); grid.get(key).push([pi, k]);
+      }
+  } });
+}
+// nearest visible piece to a tap, within `px` screen pixels: {piece, k (segment index), t, node (nearest path node)}
+function pick(latlng, px = 14, filter = () => true) {
+  const P = map.latLngToContainerPoint(latlng), x0 = Math.floor(latlng.lng / GC), y0 = Math.floor(latlng.lat / GC);
+  let best = null;
+  for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (const [pi, k] of grid.get((x0 + dx) + ',' + (y0 + dy)) || []) {
+    const p = S.pieces[pi]; if (!filter(p)) continue;
+    const A = map.latLngToContainerPoint(LL(p.path[k - 1])), B = map.latLngToContainerPoint(LL(p.path[k]));
+    const vx = B.x - A.x, vy = B.y - A.y, L2 = vx * vx + vy * vy, t = L2 ? Math.max(0, Math.min(1, ((P.x - A.x) * vx + (P.y - A.y) * vy) / L2)) : 0;
+    const d = Math.hypot(P.x - A.x - t * vx, P.y - A.y - t * vy);
+    if (d <= px && (!best || d < best.d)) best = { d, piece: p, k, t };
+  }
+  if (best) best.node = best.t < 0.5 ? best.piece.path[best.k - 1] : best.piece.path[best.k];
+  return best;
+}
+const visible = p => { const st = S.res?.states[p.id]; return st !== 'off' || p.layer !== 'road' || $('showroads').checked || inSuggestion(p.id); };
+const onNetwork = p => S.res?.states[p.id] !== 'off';
+const suggestionOf = id => $('showsugg').checked ? S.res?.suggestions.findIndex(s => s.pieces.includes(id)) ?? -1 : -1;
+const inSuggestion = id => suggestionOf(id) >= 0;
+
+function addTrailheadNear(latlng, name) {
+  const hit = pick(latlng, 40, onNetwork);
+  if (!hit) { toast('Tap closer to a trail you\'ve chosen (blue).'); return; }
+  const key = keyOf(S.view, hit.node);
+  if (S.edits.trailheads.some(t => String(t.node) === key)) { toast('There\'s already a trailhead there.'); return; }
+  edit(e => e.trailheads.push({ node: key, name }));
+}
+map.on('click', e => {
+  if (S.step === 'area' && S.picking) {
+    S.corners.push(e.latlng);
+    if (S.corners.length === 2) { const [a, b] = S.corners; setBox([Math.min(a.lat, b.lat), Math.min(a.lng, b.lng), Math.max(a.lat, b.lat), Math.max(a.lng, b.lng)]); stopPicking(); }
+    else hint('Now tap the opposite corner.');
+    return;
+  }
+  if (S.step !== 'trails' || !S.res) return;
+  if (S.tool === 'select') {
+    const hit = pick(e.latlng, 14, visible); if (!hit) return;
+    const st = S.res.states[hit.piece.id], si = st === 'off' ? suggestionOf(hit.piece.id) : -1;
+    if (si >= 0) { addSuggestion(si); return; }
+    edit(ed => { ed.pieces[hit.piece.id] = !(st === 'in' || st === 'cut'); });
+  } else if (S.tool === 'trailhead') addTrailheadNear(e.latlng, '');
+  else if (S.tool === 'split') {
+    const hit = pick(e.latlng, 14, visible); if (!hit) return;
+    const p = hit.piece, n = hit.node, k = p.path.indexOf(n);
+    if (k <= 0 || k >= p.path.length - 1) { toast('That\'s already the end of a trail. Tap further along it.'); return; }
+    const included = S.res.states[p.id] !== 'off';
+    edit(ed => { ed.splits.push(keyOf(S.view, n)); ed.pieces[p.id] = included; ed.pieces[`${p.way}/${keyOf(S.view, n)}`] = included; }, { pieces: true });
+  } else if (S.tool === 'join') {
+    const hit = pick(e.latlng, 24, visible); if (!hit) return;
+    if (S.joinFrom == null) { S.joinFrom = hit.node; render(); hint('Now tap the point to join it to.'); return; }
+    const a = S.joinFrom, b = hit.node; S.joinFrom = null; hint(HELP.join);
+    if (a === b) { render(); return; }
+    edit(ed => { ed.joins.push([keyOf(S.view, a), keyOf(S.view, b)]); });
+  } else if (S.tool === 'draw') {
+    const pt = snapAt(e.latlng), last = S.drawPts[S.drawPts.length - 1];
+    if (last && map.latLngToContainerPoint(last.ll).distanceTo(map.latLngToContainerPoint(pt.ll)) < 12) { if (S.drawPts.length > 1) finishDraw(); return; }
+    S.drawPts.push(pt); drawSketch();
+  }
+});
+
+/* ---------- cursor and hover ---------- */
+// The map shows a pointer over anything a tap would act on, a crosshair for the point tools.
+let hoverLL = null, hoverRaf = 0, dragging = false;
+map.on('dragstart', () => { dragging = true; $('map').classList.remove('hit'); });
+map.on('dragend', () => { dragging = false; });
+map.on('mousemove', e => { hoverLL = e.latlng; if (!hoverRaf) hoverRaf = requestAnimationFrame(updateHover); });
+map.on('mouseout', () => { hoverLL = null; $('map').classList.remove('hit'); hoverLayer.clearLayers(); });
+function updateHover() {
+  hoverRaf = 0; hoverLayer.clearLayers();
+  if (dragging || !hoverLL || S.step !== 'trails' || !S.res) { $('map').classList.remove('hit'); return; }
+  if (S.tool === 'draw') {
+    const pt = snapAt(hoverLL), last = S.drawPts[S.drawPts.length - 1];
+    if (last) L.polyline([last.ll, pt.ll], { color: MC.ink, weight: 2, dashArray: '4 6', interactive: false }).addTo(hoverLayer);
+    if (pt.node != null) L.circleMarker(pt.ll, { radius: 7, color: MC.in, weight: 2.5, fill: false, interactive: false }).addTo(hoverLayer);
+    $('map').classList.remove('hit');
+    return;
+  }
+  const hit = S.tool === 'trailhead' ? pick(hoverLL, 40, onNetwork) : pick(hoverLL, S.tool === 'join' ? 24 : 14, visible);
+  $('map').classList.toggle('hit', !!hit);
+  if (hit && S.tool !== 'select') L.circleMarker(LL(hit.node), { radius: 6, color: MC.ink, weight: 2, fill: false, interactive: false }).addTo(hoverLayer);
+  if (hit && S.tool === 'join' && S.joinFrom != null) L.polyline([LL(S.joinFrom), LL(hit.node)], { color: MC.ink, weight: 2, dashArray: '2 4', interactive: false }).addTo(hoverLayer);
+}
+
+/* ---------- draw: paths OpenStreetMap doesn't have ---------- */
+// a tap within 16 px of a trail node snaps to it (so the drawn path joins the network); otherwise a free point
+function snapAt(latlng) {
+  const hit = pick(latlng, 16, visible);
+  if (hit && map.latLngToContainerPoint(LL(hit.node)).distanceTo(map.latLngToContainerPoint(latlng)) <= 16) return { node: hit.node, ll: L.latLng(LL(hit.node)) };
+  return { node: null, ll: latlng };
+}
+function drawSketch() {
+  drawLayer.clearLayers();
+  const pts = S.drawPts;
+  if (pts.length > 1) L.polyline(pts.map(p => p.ll), { color: MC.ink, weight: 3, interactive: false }).addTo(drawLayer);
+  pts.forEach(p => L.circleMarker(p.ll, { radius: 5, color: '#fff', weight: 2, fillColor: p.node != null ? MC.in : MC.ink, fillOpacity: 1, interactive: false }).addTo(drawLayer));
+  $('drawdone').disabled = pts.length < 2;
+  $('drawback').disabled = !pts.length;
+}
+const DRAW_STEP = 20;   // metres between points on a drawn path, so its climb comes from the elevation data
+// [{node, ll}] -> a drawn-path entry: straight legs densified, new points given elevations
+async function drawnEntry(pts, id, name = '') {
+  const out = [pts[0]];
+  for (let k = 1; k < pts.length; k++) {
+    const a = pts[k - 1].ll, b = pts[k].ll, n = Math.ceil(a.distanceTo(b) / DRAW_STEP);
+    for (let j = 1; j < n; j++) out.push({ node: null, ll: L.latLng(a.lat + (b.lat - a.lat) * j / n, a.lng + (b.lng - a.lng) * j / n) });
+    out.push(pts[k]);
+  }
+  const free = out.filter(p => p.node == null);
+  let ele = free.map(() => null);
+  try { ele = (await sampleElevations(free.map(p => [p.ll.lat, p.ll.lng]), ELE_SOURCES)).ele; } catch { /* filled below */ }
+  free.forEach((p, i) => { p.ele = ele[i]; });
+  out.forEach(p => { if (p.node != null) p.ele = S.view.nodes[p.node][2]; });
+  // anything no source covered: interpolate along the path
+  out.forEach((p, i) => {
+    if (p.ele != null) return;
+    let a = i - 1, b = i + 1;
+    while (a >= 0 && out[a].ele == null) a--;
+    while (b < out.length && out[b].ele == null) b++;
+    p.ele = a >= 0 && b < out.length ? out[a].ele + (out[b].ele - out[a].ele) * (i - a) / (b - a) : (a >= 0 ? out[a].ele : b < out.length ? out[b].ele : 0);
+  });
+  const r6 = v => Math.round(v * 1e6) / 1e6;
+  return { id, name, pts: out.map(p => p.node != null ? keyOf(S.view, p.node) : [r6(p.ll.lat), r6(p.ll.lng), Math.round(p.ele * 10) / 10]) };
+}
+const nextDrawnId = (k = 0) => 'd' + (Math.max(0, ...S.edits.drawn.map(d => +d.id.slice(1) || 0)) + 1 + k);
+async function finishDraw() {
+  const pts = S.drawPts; if (pts.length < 2) return;
+  S.drawPts = []; drawSketch(); hoverLayer.clearLayers();
+  busy('Reading elevations…');
+  const entry = await drawnEntry(pts, nextDrawnId());
+  busy('');
+  edit(e => e.drawn.push(entry), { pieces: true });
+  if (pts[0].node == null || pts[pts.length - 1].node == null) toast('Drawn. An end that isn’t on a trail is a dead end.');
+}
+$('drawdone').onclick = finishDraw;
+
+/* ---------- GPS tracks ---------- */
+// The track picks out pieces it runs along and the stretches OpenStreetMap doesn't have; nothing is added
+// until the user says so.
+function matchTracks() {
+  trackLayer.clearLayers();
+  S.match = S.tracks.length && S.pieces.length ? matchTrack({ nodes: S.view.nodes, pieces: S.pieces, tracks: S.tracks, bbox: S.bbox }) : null;
+  $('gpxclear').hidden = !S.tracks.length;
+  for (const t of S.tracks) L.polyline(t.pts.map(p => [p[0], p[1]]), { color: MC.track, weight: 2.5, opacity: 0.8, interactive: false }).addTo(trackLayer);
+  for (const g of S.match?.gaps || []) L.polyline(g.pts.map(p => [p.lat, p.lon]), { color: MC.track, weight: 6, opacity: 0.7, dashArray: '8 6', interactive: false }).addTo(trackLayer);
+}
+function trackCounts() {
+  const st = S.res?.states || {}, f = S.match?.followed || [], sum = a => a.reduce((s, x) => s + x.len, 0);
+  const offTrail = f.filter(x => x.layer === 'trail' && st[x.id] === 'off'), offRoad = f.filter(x => x.layer === 'road' && st[x.id] === 'off');
+  return { all: sum(f), offTrail, offRoad, trailM: sum(offTrail), roadM: sum(offRoad) };
+}
+function renderGpx() {
+  const el = $('gpxres');
+  if (!S.match) { el.innerHTML = ''; return; }
+  const c = trackCounts(), gaps = S.match.gaps, gapM = gaps.reduce((s, g) => s + g.m, 0);
+  const row = (what, sub, btns) => `<div class="item"><span class="what">${what}<small>${sub}</small></span><span class="row">${btns}</span></div>`;
+  el.innerHTML =
+    row(`Follows ${fmtKm(c.all)} km of paths`, c.trailM ? `${fmtKm(c.trailM)} km of trail isn't in your network yet` : 'All of its trail is in your network', c.trailM ? '<button class="button sm" id="gpxtrail">Add</button>' : '') +
+    (c.roadM ? row(`${fmtKm(c.roadM)} km of road or sidewalk`, 'Your track uses it, but it isn\'t in your network', '<button class="button sm" id="gpxroad">Add</button>') : '') +
+    (gaps.length ? row(`${gaps.length} stretch${gaps.length > 1 ? 'es' : ''} OpenStreetMap doesn't have`, `${Math.round(gapM)} m, dashed on the map`, '<button class="button quiet sm" id="gpxshow">Show</button><button class="button sm" id="gpxgaps">Add</button>') : '');
+  const add = list => edit(e => { for (const x of list) e.pieces[x.id] = true; });
+  if ($('gpxtrail')) $('gpxtrail').onclick = () => add(c.offTrail);
+  if ($('gpxroad')) $('gpxroad').onclick = () => add(c.offRoad);
+  if ($('gpxshow')) $('gpxshow').onclick = () => map.fitBounds(L.latLngBounds(gaps.flatMap(g => g.pts.map(p => [p.lat, p.lon]))).pad(0.3), { maxZoom: 17 });
+  if ($('gpxgaps')) $('gpxgaps').onclick = addTrackGaps;
+}
+async function addTrackGaps() {
+  const gaps = S.match?.gaps || []; if (!gaps.length) return;
+  busy('Reading elevations…');
+  const entries = [];
+  for (const [k, g] of gaps.entries()) entries.push(await drawnEntry(g.pts.map(p => ({ node: p.node, ll: L.latLng(p.lat, p.lon) })), nextDrawnId(k)));
+  busy('');
+  edit(e => e.drawn.push(...entries), { pieces: true });
+}
+$('gpxfile').onchange = async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  let added = 0;
+  for (const f of files) { try { const t = parseGpx(await f.text()); S.tracks.push(...t); added += t.length; } catch { /* reported below */ } }
+  if (!added) { toast('No track found in that file.'); return; }
+  matchTracks(); render();
+  const b = S.bbox, inside = S.tracks.flatMap(t => t.pts).filter(p => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]);
+  if (!inside.length) toast('That track is outside this area.');
+};
+$('gpxclear').onclick = () => { S.tracks = []; matchTracks(); render(); };
+$('drawback').onclick = () => { S.drawPts.pop(); drawSketch(); };
+$('drawcancel').onclick = () => { S.drawPts = []; drawSketch(); hoverLayer.clearLayers(); };
+document.addEventListener('keydown', e => {
+  if (S.tool !== 'draw' || S.step !== 'trails' || e.target.matches('input')) return;
+  if (e.key === 'Enter') finishDraw();
+  else if (e.key === 'Escape') $('drawcancel').onclick();
+  else if (e.key === 'Backspace') { e.preventDefault(); $('drawback').onclick(); }
+});
+
+$('back1').onclick = () => setStep('area');
+$('tosave').onclick = () => { setStep('save'); renderSave(); };
+
+/* ---------- step 3: save ---------- */
+function dominantSource() { const s = S.ele?.sources || {}; return (s.hrdem || 0) >= (s['terrain-tiles'] || 0) ? 'hrdem' : 'terrain-tiles'; }
+function renderSave() {
+  const r = S.res, ok = r && !r.provisional && r.data?.th?.length;
+  $('name').value = S.name;
+  const src = dominantSource();
+  $('savesum').textContent = r ? `${fmtKm(r.keptM)} km of trail, ${r.data?.th?.length || 0} trailhead${r.data?.th?.length === 1 ? '' : 's'}. Elevations from ${src === 'hrdem' ? 'LiDAR (HRDEM)' : 'terrain tiles'}; climb is approximate.` : '';
+  $('savewarn').hidden = !!ok;
+  $('savewarn').textContent = 'Add a trailhead on a routable trail before saving.';
+  $('openrb').disabled = $('download').disabled = !ok;
+}
+$('name').oninput = () => { S.name = $('name').value.trim(); saveDraft(); };
+function buildPackage() {
+  const src = dominantSource(), win = SMOOTHING[src];
+  const data = smoothAlongSegments(S.res.data, win);
+  const attribution = [S.ele?.sources?.hrdem ? HRDEM_ATTRIBUTION : null, S.ele?.sources?.['terrain-tiles'] ? TERRARIUM_ATTRIBUTION : null].filter(Boolean);
+  return makePackage({ name: S.name || 'My trails', bbox: S.bbox, raw: S.raw, edits: S.edits, compiled: { data },
+    elevation: { sources: S.ele?.sources, smoothing: win, attribution }, osmTimestamp: S.osmTimestamp });
+}
+$('download').onclick = () => {
+  const pkg = buildPackage(), name = (pkg.name.replace(/[^\w -]/g, '').trim() || 'area').replace(/\s+/g, '-').toLowerCase();
+  const url = URL.createObjectURL(new Blob([JSON.stringify(pkg)], { type: 'application/json' }));
+  const a = document.createElement('a'); a.href = url; a.download = name + '.trails.json'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+};
+$('openrb').onclick = async () => {
+  if (!await saveArea('current', buildPackage())) { toast('This browser won\'t store the area. Download the file to keep it.'); return; }
+  location.href = '../?area=local';
+};
+$('back2').onclick = () => setStep('trails');
+
+/* ---------- open a file or resume ---------- */
+$('openfile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  try { await openPackage(JSON.parse(await f.text())); } catch (err) { toast(err.message || 'That file couldn\'t be read.'); }
+};
+// the route builder's own area: edit it here, download, and commit it as site/data/burnaby-mountain.trails.json
+$('editbuiltin').onclick = async () => {
+  try {
+    const json = await fetch('../data/burnaby-mountain.trails.json').then(r => r.ok ? r.json() : Promise.reject());
+    await openPackage(json);
+  } catch (err) { toast(err?.message || 'Couldn\'t load Burnaby Mountain.'); }
+};
+async function openPackage(json) {
+  const pkg = readPackageLoose(json);
+  S.bbox = pkg.bbox; setBox(pkg.bbox); S.edits = pkg.edits; S.name = pkg.name || ''; S.undo = [];
+  S.ele = { sources: pkg.elevation?.sources || {}, missing: 0 }; S.osmTimestamp = pkg.osmTimestamp;
+  await startEditing(pkg.osm);
+  await saveArea('draft', { bbox: S.bbox, raw: pkg.osm, ele: S.ele, osmTimestamp: S.osmTimestamp, edits: S.edits, name: S.name });
+}
+// an area file still being set up may have no trailhead yet; only the route builder needs one
+function readPackageLoose(json) {
+  try { return readPackage(json); } catch (err) {
+    if (json?.format === 'trail-area' && json.osm) return { ...json, edits: { ...emptyEdits(), ...json.edits } };
+    throw err;
+  }
+}
+(async () => {
+  const draft = await loadArea('draft');
+  if (!draft?.raw) return;
+  const later = await loadArea('draft-edits');
+  const name = later?.name || draft.name;
+  $('resume').hidden = false;
+  $('resume').textContent = `Continue ${name || 'your last area'}`;
+  $('resume').onclick = async () => {
+    S.bbox = draft.bbox; setBox(draft.bbox); S.ele = draft.ele; S.osmTimestamp = draft.osmTimestamp;
+    S.edits = { ...emptyEdits(), ...(later?.edits || draft.edits) }; S.name = name || ''; S.undo = [];
+    await startEditing(draft.raw);
+  };
+})();
+setStep('area');
+</script>
+</body>
+</html>
