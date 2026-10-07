@@ -1,5 +1,5 @@
 // Route search core. Pure functions over a graph; no DOM.
-// Loaded by router-worker.js (importScripts) in the browser and by tests/router.test.mjs in Node.
+// Loaded in the browser by the route builder widget's worker (importScripts) and by tests/router.test.mjs in Node.
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
 let G=null;
 function setGraph(g){ G=g; }
@@ -27,6 +27,24 @@ function buildGraph(DATA){
 // The slimmed graph the worker needs (no geometry).
 function workerGraph({edges, adj, inc}){
   return {edges:edges.map(e=>({a:e.a,b:e.b,len:e.len,up:e.up,dn:e.dn,g:e.g,gd:e.gd,k:e.k,o:e.o})), adj, inc};
+}
+// A route's path for display: nodes with distance along the route and lap number, and where each lap starts.
+function routeGeometry(r, edges, nodes){
+  const R=6371000, k=Math.PI/180, cos0=Math.cos(nodes[0][0]*k);
+  const d2=(a,b)=>Math.hypot((nodes[a][1]-nodes[b][1])*k*R*cos0, (nodes[a][0]-nodes[b][0])*k*R);
+  const pts=[], lapAt=new Set(r.bounds), cuts=[]; let cum=0;
+  r.steps.forEach(([e,dir],i)=>{
+    if(lapAt.has(i)) cuts.push(cum);
+    const p = dir>0 ? edges[e].p : edges[e].p.slice().reverse();
+    p.forEach((n,j)=>{ if(pts.length && j===0) return; if(pts.length) cum+=d2(pts[pts.length-1].n,n); pts.push({n,cum,lap:cuts.length-1}); });
+  });
+  return {pts, cuts};
+}
+// Trail km reachable from a junction (the "% of trails" a longest loop covers).
+function reachableKm(start, maxg, edges, adj){
+  const seen=new Set([start]), st=[start], es=new Set();
+  while(st.length){ const u=st.pop(); for(const t of adj[u]){ const e=edges[t.e]; if((e.g||2)>maxg) continue; es.add(t.e); if(!seen.has(t.to)){ seen.add(t.to); st.push(t.to); } } }
+  let L=0; for(const i of es) L+=edges[i].len; return L/1000;
 }
 const UNK = 2;
 function effGrade(ed, dir){
@@ -225,7 +243,8 @@ function solveLongest(p){
     const par=new Map([[root,null]]), dep=new Map([[root,0]]), q=[root], tree=new Uint8Array(chains.length);
     for(let k=0;k<q.length;k++){ const u=q[k]; for(const [c,v] of CA.get(u)) if(!par.has(v)){ par.set(v,[c,u]); dep.set(v,dep.get(u)+1); tree[c]=1; q.push(v); } }
     const cycles=[];
-    chains.forEach((c,k)=>{ if(tree[k]) return; const cy=[k]; let a=c.a, b=c.b;
+    // chains in parts of the network the root can't reach have no cycle through it
+    chains.forEach((c,k)=>{ if(tree[k] || !par.has(c.a) || !par.has(c.b)) return; const cy=[k]; let a=c.a, b=c.b;
       while(a!==b){ if(dep.get(a)>=dep.get(b)){ cy.push(par.get(a)[0]); a=par.get(a)[1]; } else { cy.push(par.get(b)[0]); b=par.get(b)[1]; } }
       cycles.push(cy); });
     if(!cycles.length) return cur;
