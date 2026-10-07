@@ -94,17 +94,29 @@ export function parseOsm(json) {
   return { nodes, osmNodes, ways, pois };
 }
 
-// Cut ways into pieces at junctions (nodes used by more than one way, or by the same way twice).
-// Piece ids are `<way id>.<n>` so later edits can refer to them by OSM id.
-export function splitWays(ways) {
+// Stable key for a node: its OSM id, or `i<index>` for data without node ids (older exports).
+export const nodeKey = (raw, i) => raw.osmNodes?.[i] != null ? String(raw.osmNodes[i]) : 'i' + i;
+export function nodeIndex(raw) {
+  const m = new Map();
+  raw.nodes.forEach((_, i) => m.set(nodeKey(raw, i), i));
+  return m;
+}
+
+// Cut ways into pieces at junctions (nodes used by more than one way, or by the same way twice) and at
+// any extra `breaks` (user splits). Piece ids are `<way id>/<key of its first node>`: splitting a piece
+// elsewhere doesn't change the id of the part before the split.
+export function splitWays(ways, { breaks = new Set(), key = n => String(n) } = {}) {
   const uses = new Map();
   for (const w of ways) w.path.forEach((n, k) => { if (k === 0 || k === w.path.length - 1) uses.set(n, (uses.get(n) || 0) + 2); else uses.set(n, (uses.get(n) || 0) + 1); });
-  const pieces = [];
+  const pieces = [], seen = new Set();
   for (const w of ways) {
-    let start = 0, n = 0;
+    let start = 0;
     for (let k = 1; k < w.path.length; k++) {
-      if (k === w.path.length - 1 || uses.get(w.path[k]) > 1) {
-        pieces.push({ id: `${w.id}.${n++}`, way: w.id, path: w.path.slice(start, k + 1), tags: w.tags, layer: w.layer });
+      if (k === w.path.length - 1 || uses.get(w.path[k]) > 1 || breaks.has(w.path[k])) {
+        let id = `${w.id}/${key(w.path[start])}`;
+        for (let d = 2; seen.has(id); d++) id = `${w.id}/${key(w.path[start])}~${d}`;
+        seen.add(id);
+        pieces.push({ id, way: w.id, path: w.path.slice(start, k + 1), tags: w.tags, layer: w.layer });
         start = k;
       }
     }
@@ -113,19 +125,20 @@ export function splitWays(ways) {
 }
 
 // First-pass draft for a new area: trail pieces in, everything else a candidate; short dead-end stubs out.
-// Returns the buildRouterData input (minus trailheads), plus the pieces so the UI can show and toggle them.
-export function draftNetwork(raw, { stubMax = 25 } = {}) {
-  const pieces = splitWays(raw.ways);
+// `overrides` ({piece id: true|false}) are the user's choices and win over the defaults; `breaks` are
+// node indices to split at. Returns the buildRouterData input (minus trailheads) plus the pieces.
+export function draftNetwork(raw, { stubMax = 25, overrides = {}, breaks } = {}) {
+  const pieces = splitWays(raw.ways, { breaks, key: n => nodeKey(raw, n) });
   const N = raw.nodes, lat0 = N.length ? N[0][0] * Math.PI / 180 : 0, R = 6371000, cos0 = Math.cos(lat0);
   const dist = (a, b) => Math.hypot((N[a][1] - N[b][1]) * Math.PI / 180 * R * cos0, (N[a][0] - N[b][0]) * Math.PI / 180 * R);
   const len = p => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; };
-  for (const pc of pieces) { pc.len = len(pc.path); pc.included = pc.layer === 'trail'; }
+  for (const pc of pieces) { pc.len = len(pc.path); pc.included = pc.id in overrides ? overrides[pc.id] : pc.layer === 'trail'; }
   for (let round = 0; round < 5; round++) {
     const deg = new Map();
     for (const pc of pieces) if (pc.included) for (const n of [pc.path[0], pc.path[pc.path.length - 1]]) deg.set(n, (deg.get(n) || 0) + 1);
     let moved = 0;
     for (const pc of pieces) {
-      if (!pc.included || pc.len >= stubMax) continue;
+      if (!pc.included || pc.len >= stubMax || pc.id in overrides) continue;
       if (deg.get(pc.path[0]) === 1 || deg.get(pc.path[pc.path.length - 1]) === 1) { pc.included = false; pc.stub = true; moved++; }
     }
     if (!moved) break;
