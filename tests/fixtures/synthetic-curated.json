@@ -1,0 +1,133 @@
+{
+ "_editor": {
+  "segs": [
+   {
+    "id": "s1",
+    "path": [
+     0,
+     1,
+     2
+    ],
+    "name": "Loop East",
+    "kind": "trail",
+    "grade": 2,
+    "gradeDown": null,
+    "oneway": "no"
+   },
+   {
+    "id": "s2",
+    "path": [
+     2,
+     3,
+     0
+    ],
+    "name": "Loop West",
+    "kind": "trail",
+    "grade": 1,
+    "gradeDown": null,
+    "oneway": "no"
+   },
+   {
+    "id": "s3",
+    "path": [
+     1,
+     4
+    ],
+    "name": "Spur",
+    "kind": "trail",
+    "grade": null,
+    "gradeDown": null,
+    "oneway": "no"
+   },
+   {
+    "id": "s4",
+    "path": [
+     5,
+     6,
+     2
+    ],
+    "name": "Ridge",
+    "kind": "trail",
+    "grade": 3,
+    "gradeDown": null,
+    "oneway": "no"
+   },
+   {
+    "id": "s5",
+    "path": [
+     3,
+     8
+    ],
+    "name": "Stub",
+    "kind": "trail",
+    "grade": null,
+    "gradeDown": null,
+    "oneway": "no"
+   },
+   {
+    "id": "s6",
+    "path": [
+     11,
+     12,
+     2
+    ],
+    "name": "Upper",
+    "kind": "connector",
+    "grade": null,
+    "gradeDown": null,
+    "oneway": "no"
+   },
+   {
+    "id": "s7",
+    "path": [
+     13,
+     14,
+     15
+    ],
+    "name": "Island A",
+    "kind": "trail",
+    "grade": null,
+    "gradeDown": null,
+    "oneway": "no"
+   },
+   {
+    "id": "s8",
+    "path": [
+     15,
+     16,
+     13
+    ],
+    "name": "Island B",
+    "kind": "trail",
+    "grade": null,
+    "gradeDown": null,
+    "oneway": "no"
+   },
+   {
+    "id": "s9",
+    "path": [
+     18,
+     19,
+     20,
+     18
+    ],
+    "name": "Far loop",
+    "kind": "trail",
+    "grade": null,
+    "gradeDown": null,
+    "oneway": "no"
+   }
+  ],
+  "nodes": {
+   "0": {
+    "type": "trailhead",
+    "name": "North lot"
+   },
+   "12": {
+    "type": "trailhead",
+    "name": "Summit"
+   }
+  },
+  "added": []
+ }
+}
