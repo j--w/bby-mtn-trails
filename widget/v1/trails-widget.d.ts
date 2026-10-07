@@ -5,6 +5,7 @@
 //
 // The widget draws into the element you give it and lays itself out there (side panel when wide, stacked when
 // narrow), so give the element a height. Everything here stays backward compatible within v1.
+// Area setup is a separate widget (setup-widget.js) so pages that only build routes stay light.
 // Units: distances and climb in metres, times in seconds, coordinates [lat, lon] (WGS84).
 
 // ---------- areas ----------
