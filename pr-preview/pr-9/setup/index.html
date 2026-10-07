@@ -113,7 +113,6 @@ footer a{color:inherit}
       <div class="row">
         <button class="button quiet" id="resume" hidden></button>
         <label class="button quiet" style="cursor:pointer">Open an area file<input type="file" id="openfile" accept=".json,application/json" hidden></label>
-        <button class="button quiet" id="editbuiltin">Edit Burnaby Mountain</button>
       </div>
     </section>
 
@@ -167,7 +166,7 @@ footer a{color:inherit}
     </section>
 
     <section id="p-save" class="stack" hidden>
-      <label class="f">Area name<input type="text" id="name" maxlength="60" placeholder="e.g. Burnaby Mountain"></label>
+      <label class="f">Area name<input type="text" id="name" maxlength="60" placeholder="e.g. Forest Park trails"></label>
       <p class="small muted" id="savesum"></p>
       <div class="notice" id="savewarn" hidden></div>
       <button class="button primary" id="openrb">Build routes here</button>
@@ -676,7 +675,7 @@ $('download').onclick = () => {
 };
 $('openrb').onclick = async () => {
   if (!await saveArea('current', buildPackage())) { toast('This browser won\'t store the area. Download the file to keep it.'); return; }
-  location.href = '../?area=local';
+  location.href = '../';
 };
 $('back2').onclick = () => setStep('trails');
 
@@ -685,13 +684,6 @@ $('openfile').onchange = async e => {
   const f = e.target.files[0]; e.target.value = '';
   if (!f) return;
   try { await openPackage(JSON.parse(await f.text())); } catch (err) { toast(err.message || 'That file couldn\'t be read.'); }
-};
-// the route builder's own area: edit it here, download, and commit it as site/data/burnaby-mountain.trails.json
-$('editbuiltin').onclick = async () => {
-  try {
-    const json = await fetch('../data/burnaby-mountain.trails.json').then(r => r.ok ? r.json() : Promise.reject());
-    await openPackage(json);
-  } catch (err) { toast(err?.message || 'Couldn\'t load Burnaby Mountain.'); }
 };
 async function openPackage(json) {
   const pkg = readPackageLoose(json);
