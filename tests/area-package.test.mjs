@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseOsm } from '../site/js/osm.js';
-import { compileArea, suggestConnectors, makePackage, readPackage, emptyEdits, keyOf } from '../site/js/area-package.js';
+import { compileArea, suggestConnectors, makePackage, readPackage, emptyEdits, keyOf, withDrawn } from '../site/js/area-package.js';
 
 const load = p => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
 
@@ -80,4 +80,30 @@ test('packages round-trip and are checked on load', () => {
   assert.deepEqual(compileArea(back.osm, back.edits).data, c.data);
   assert.throws(() => readPackage({ format: 'other' }), /isn’t a trail area/);
   assert.throws(() => readPackage({ ...pkg, data: { ...pkg.data, th: [] } }), /no routable network/);
+});
+
+test('a drawn path joins a cut-off trail to the network and can hold a trailhead', () => {
+  const base = compileArea(raw);
+  const netNodes = [...new Set(base.pieces.filter(p => p.state === 'in').flatMap(p => p.path))];
+  const d = (a, b) => Math.hypot((raw.nodes[a][1] - raw.nodes[b][1]) * 72900, (raw.nodes[a][0] - raw.nodes[b][0]) * 111200);
+  // the cut-off piece closest to the network
+  let best = null;
+  for (const p of base.pieces.filter(p => p.state === 'cut' && p.len > 150)) for (const e of [p.path[0], p.path[p.path.length - 1]])
+    for (const n of netNodes) { const m = d(e, n); if (!best || m < best.m) best = { m, e, n, piece: p }; }
+  const [A, B] = [raw.nodes[best.e], raw.nodes[best.n]];
+  const mid = [(A[0] + B[0]) / 2 + 0.0001, (A[1] + B[1]) / 2, 300];
+  const drawn = [{ id: 'd1', name: 'Bushwhack', pts: [keyOf(raw, best.e), mid, keyOf(raw, best.n)] }];
+  const edits = { ...emptyEdits(), drawn, trailheads: [{ node: 'd1.1', name: 'Middle' }] };
+  const c = compileArea(raw, edits);
+  assert.equal(c.provisional, false, 'the trailhead on the drawn point is on the network');
+  assert.equal(c.pieces.find(p => p.id === best.piece.id).state, 'in');
+  assert.ok(c.pieces.some(p => p.way === 'd1' && p.state === 'in' && p.tags.name === 'Bushwhack'));
+  assert.ok(km(c) > km(base));
+  // the drawn point is a new node at the end; OSM node indices don't move
+  const view = withDrawn(raw, drawn);
+  assert.equal(view.nodes.length, raw.nodes.length + 1);
+  assert.deepEqual(view.nodes.slice(0, raw.nodes.length), raw.nodes);
+  // it survives a save and reload
+  const pkg = readPackage(JSON.parse(JSON.stringify(makePackage({ name: 'T', bbox: [S, W, Nn, E], raw, edits, compiled: c }))));
+  assert.deepEqual(compileArea(pkg.osm, pkg.edits).data.th, c.data.th);
 });
