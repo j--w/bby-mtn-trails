@@ -7,7 +7,8 @@ changing the routing or the data pipeline.
 
 ## Layout
 
-- `site/` is the deployed static site (GitHub Pages serves this folder).
+- `site/` is the deployed static site (GitHub Pages serves it from the `gh-pages` branch; `pages.yml` publishes main
+  there and `preview.yml` puts each PR at `pr-preview/pr-<number>/`).
   - `index.html`: route builder UI (one ES module inline script; Leaflet 1.9.4 from cdnjs with OSM/OpenTopoMap tiles for the
     map, hand-drawn SVG elevation profile). Grades still drive routing data but are not shown or chosen in the UI;
     new routes allow every vetted trail (maxg 4), and loaded route codes keep their own maxg/late.
@@ -22,10 +23,12 @@ changing the routing or the data pipeline.
     as fallback, and `smoothAlongSegments` so DEM noise doesn't inflate climb.
   - `js/area-package.js`: area packages (`.trails.json`: OSM snapshot, the user's edits keyed by OSM ids, compiled
     routing graph). `compileArea`, `suggestConnectors`, `makePackage`, `readPackage`. Pure.
+  - `js/gpx.js`: `parseGpx` and `matchTrack` (which network pieces a GPS track follows, and the stretches it runs
+    where the network has nothing, which the setup page adds as drawn paths). Pure.
   - `js/area-worker.js` (module worker, compiles off the main thread) and `js/area-store.js` (IndexedDB: the setup
     draft and the `current` area the route builder opens with `?area=local`).
   - `setup/index.html`: area setup. Pick a rectangle, load OSM trails and elevations, curate (trails, trailheads,
-    split, join, drawn paths OSM lacks, connector suggestions), then download the area file or open it in the route builder. The route
+    split, join, drawn paths OSM lacks, GPX tracks, connector suggestions), then download the area file or open it in the route builder. The route
     builder also takes `?area=<url of a .trails.json>`.
   - `editor/index.html`: trail network editor (add/remove/grade segments, mark trailheads, export JSON).
   - `data/burnaby-mountain.json`: compact routing graph the route builder loads. **Generated; don't hand-edit.**
@@ -35,8 +38,8 @@ changing the routing or the data pipeline.
 - `scripts/build_router_data.py`: curated.json + editor base data → `site/data/<area>.json`.
 - `scripts/bootstrap/`: one-off history scripts that made the editor base data. Not part of the normal flow.
 - `tests/router.test.mjs`: Node tests for the route search against the real data.
-- `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`, `tests/area-package.test.mjs`: the
-  area-setup modules.
+- `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`, `tests/area-package.test.mjs`,
+  `tests/gpx.test.mjs`: the area-setup modules.
   `tests/fixtures/synthetic-expected.json` is made by the Python build; regenerate it the same way if the
   Python build changes (command in the test file).
 

@@ -1,26 +1,23 @@
 name: Deploy site to GitHub Pages
+# Publishes site/ to the root of the gh-pages branch (Pages source: Deploy from a branch, gh-pages, / (root)).
+# PR previews live under pr-preview/ on the same branch (preview.yml), so this deploy leaves that folder alone.
 on:
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 concurrency:
   group: pages
   cancel-in-progress: true
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
+      - uses: JamesIves/github-pages-deploy-action@v4.9.0
         with:
-          path: site
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          folder: site
+          branch: gh-pages
+          clean-exclude: pr-preview/
+          force: false

@@ -141,6 +141,12 @@ footer a{color:inherit}
         <div class="list" id="drawnlist"></div>
       </div>
       <div>
+        <h2 class="section-title">GPS tracks</h2>
+        <p class="small muted" style="margin-bottom:6px">Load GPX files of your runs to add the trails you use and the bits OpenStreetMap is missing. Tracks aren't saved in the area file.</p>
+        <div class="list" id="gpxres"></div>
+        <div class="row" style="margin-top:6px"><label class="button sm" style="cursor:pointer">Load GPX<input type="file" id="gpxfile" accept=".gpx,application/gpx+xml" multiple hidden></label><button class="button sm quiet" id="gpxclear" hidden>Remove tracks</button></div>
+      </div>
+      <div>
         <h2 class="section-title">Suggested connectors</h2>
         <p class="small muted" style="margin-bottom:6px">Short road or path links that join trails up. Add the ones you'd run.</p>
         <div class="list" id="sugglist"></div>
@@ -153,6 +159,7 @@ footer a{color:inherit}
         <span class="sw" style="border-color:#c2410c;border-top-style:dotted"></span><span>Chosen, but not joined to a trailhead</span>
         <span class="sw" style="border-color:#8a93a0;border-top-width:2px"></span><span>Not used (tap to add)</span>
         <span class="sw" style="border-color:#7b3fb4"></span><span>Suggested connector</span>
+        <span class="sw" style="border-color:#d6336c;border-top-width:2px"></span><span>Your GPS track (dashed: missing from OpenStreetMap)</span>
       </div>
       <div class="row"><button class="button" id="undo" disabled>Undo</button><button class="button" id="back1">Change area</button></div>
       <button class="button primary" id="tosave">Next: save</button>
@@ -182,18 +189,19 @@ footer a{color:inherit}
 import { fetchOsm, parseOsm, bboxKm2, nodeIndex } from '../js/osm.js';
 import { sampleElevations, hrdemSource, terrariumSource, smoothAlongSegments, SMOOTHING, HRDEM_ATTRIBUTION, TERRARIUM_ATTRIBUTION } from '../js/elevation.js';
 import { makePackage, readPackage, emptyEdits, keyOf, withDrawn } from '../js/area-package.js';
+import { parseGpx, matchTrack } from '../js/gpx.js';
 import { loadArea, saveArea } from '../js/area-store.js';
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const WARN_KM2 = 30, MAX_KM2 = 120;
 // Tiles are light in both themes, so overlays use fixed light-theme colours.
-const MC = { in: '#2155cc', auto: '#a85f00', cut: '#c2410c', off: '#8a93a0', road: '#b0b8c4', sugg: '#7b3fb4', ink: '#17202b' };
+const MC = { in: '#2155cc', auto: '#a85f00', cut: '#c2410c', off: '#8a93a0', road: '#b0b8c4', sugg: '#7b3fb4', track: '#d6336c', ink: '#17202b' };
 
 // one set of sources so the LiDAR file headers are read once per page
 const ELE_SOURCES = [hrdemSource(), terrariumSource()];
 // raw: the OSM network as loaded; view: raw plus drawn paths (what piece paths and node keys refer to)
-const S = { step: 'area', bbox: null, raw: null, view: null, keyIdx: null, focus: null, drawPts: [], edits: emptyEdits(), name: '', ele: null, osmTimestamp: null,
+const S = { step: 'area', bbox: null, raw: null, view: null, keyIdx: null, focus: null, drawPts: [], tracks: [], match: null, edits: emptyEdits(), name: '', ele: null, osmTimestamp: null,
   res: null, pieces: [], tool: 'select', undo: [], joinFrom: null, corners: [], picking: false };
 
 /* ---------- map ---------- */
@@ -204,6 +212,7 @@ L.control.layers({ 'Streets': osm, 'Topo': topo }, null, { position: 'topright' 
 L.control.scale({ imperial: false }).addTo(map);
 const boxLayer = L.layerGroup().addTo(map), drawLayer = L.layerGroup(), hoverLayer = L.layerGroup(), pieceLayer = L.layerGroup().addTo(map), extraLayer = L.layerGroup().addTo(map),
   poiLayer = L.layerGroup().addTo(map), thLayer = L.layerGroup().addTo(map);
+const trackLayer = L.layerGroup().addTo(map);
 drawLayer.addTo(map); hoverLayer.addTo(map);
 const lines = new Map();   // piece id -> polyline
 
@@ -285,7 +294,7 @@ worker.onmessage = e => {
   if (m.id !== reqId) return;
   busy('');
   if (m.error) { toast('Something went wrong building the network: ' + m.error); return; }
-  if (m.pieces) { S.pieces = m.pieces; drawPieces(); }
+  if (m.pieces) { S.pieces = m.pieces; drawPieces(); matchTracks(); }
   S.res = m;
   render();
 };
@@ -296,7 +305,7 @@ function compile(withPieces = false) {
   compileT = setTimeout(() => { worker.postMessage({ id: ++reqId, edits: S.edits, withPieces: needPieces }); needPieces = false; }, 80);
 }
 async function startEditing(raw) {
-  S.raw = raw; S.view = withDrawn(raw, S.edits.drawn); S.keyIdx = nodeIndex(S.view); S.focus = null; S.drawPts = [];
+  S.raw = raw; S.view = withDrawn(raw, S.edits.drawn); S.keyIdx = nodeIndex(S.view); S.focus = null; S.drawPts = []; S.tracks = []; matchTracks();
   worker.postMessage({ raw });
   drawPois();
   setStep('trails');
@@ -339,6 +348,7 @@ function render() {
   renderThList(onNet);
   renderSuggestions();
   renderDrawn();
+  renderGpx();
   $('undo').disabled = !S.undo.length;
 }
 function drawTrailheads() {
@@ -542,10 +552,8 @@ function drawSketch() {
   $('drawback').disabled = !pts.length;
 }
 const DRAW_STEP = 20;   // metres between points on a drawn path, so its climb comes from the elevation data
-async function finishDraw() {
-  const pts = S.drawPts; if (pts.length < 2) return;
-  S.drawPts = []; drawSketch(); hoverLayer.clearLayers();
-  // densify the straight legs, then read elevations for the new points
+// [{node, ll}] -> a drawn-path entry: straight legs densified, new points given elevations
+async function drawnEntry(pts, id, name = '') {
   const out = [pts[0]];
   for (let k = 1; k < pts.length; k++) {
     const a = pts[k - 1].ll, b = pts[k].ll, n = Math.ceil(a.distanceTo(b) / DRAW_STEP);
@@ -553,10 +561,8 @@ async function finishDraw() {
     out.push(pts[k]);
   }
   const free = out.filter(p => p.node == null);
-  busy('Reading elevations…');
   let ele = free.map(() => null);
   try { ele = (await sampleElevations(free.map(p => [p.ll.lat, p.ll.lng]), ELE_SOURCES)).ele; } catch { /* filled below */ }
-  busy('');
   free.forEach((p, i) => { p.ele = ele[i]; });
   out.forEach(p => { if (p.node != null) p.ele = S.view.nodes[p.node][2]; });
   // anything no source covered: interpolate along the path
@@ -568,11 +574,68 @@ async function finishDraw() {
     p.ele = a >= 0 && b < out.length ? out[a].ele + (out[b].ele - out[a].ele) * (i - a) / (b - a) : (a >= 0 ? out[a].ele : b < out.length ? out[b].ele : 0);
   });
   const r6 = v => Math.round(v * 1e6) / 1e6;
-  const id = 'd' + (Math.max(0, ...S.edits.drawn.map(d => +d.id.slice(1) || 0)) + 1);
-  edit(e => e.drawn.push({ id, name: '', pts: out.map(p => p.node != null ? keyOf(S.view, p.node) : [r6(p.ll.lat), r6(p.ll.lng), Math.round(p.ele * 10) / 10]) }), { pieces: true });
+  return { id, name, pts: out.map(p => p.node != null ? keyOf(S.view, p.node) : [r6(p.ll.lat), r6(p.ll.lng), Math.round(p.ele * 10) / 10]) };
+}
+const nextDrawnId = (k = 0) => 'd' + (Math.max(0, ...S.edits.drawn.map(d => +d.id.slice(1) || 0)) + 1 + k);
+async function finishDraw() {
+  const pts = S.drawPts; if (pts.length < 2) return;
+  S.drawPts = []; drawSketch(); hoverLayer.clearLayers();
+  busy('Reading elevations…');
+  const entry = await drawnEntry(pts, nextDrawnId());
+  busy('');
+  edit(e => e.drawn.push(entry), { pieces: true });
   if (pts[0].node == null || pts[pts.length - 1].node == null) toast('Drawn. An end that isn’t on a trail is a dead end.');
 }
 $('drawdone').onclick = finishDraw;
+
+/* ---------- GPS tracks ---------- */
+// The track picks out pieces it runs along and the stretches OpenStreetMap doesn't have; nothing is added
+// until the user says so.
+function matchTracks() {
+  trackLayer.clearLayers();
+  S.match = S.tracks.length && S.pieces.length ? matchTrack({ nodes: S.view.nodes, pieces: S.pieces, tracks: S.tracks, bbox: S.bbox }) : null;
+  $('gpxclear').hidden = !S.tracks.length;
+  for (const t of S.tracks) L.polyline(t.pts.map(p => [p[0], p[1]]), { color: MC.track, weight: 2.5, opacity: 0.8, interactive: false }).addTo(trackLayer);
+  for (const g of S.match?.gaps || []) L.polyline(g.pts.map(p => [p.lat, p.lon]), { color: MC.track, weight: 6, opacity: 0.7, dashArray: '8 6', interactive: false }).addTo(trackLayer);
+}
+function trackCounts() {
+  const st = S.res?.states || {}, f = S.match?.followed || [], sum = a => a.reduce((s, x) => s + x.len, 0);
+  const offTrail = f.filter(x => x.layer === 'trail' && st[x.id] === 'off'), offRoad = f.filter(x => x.layer === 'road' && st[x.id] === 'off');
+  return { all: sum(f), offTrail, offRoad, trailM: sum(offTrail), roadM: sum(offRoad) };
+}
+function renderGpx() {
+  const el = $('gpxres');
+  if (!S.match) { el.innerHTML = ''; return; }
+  const c = trackCounts(), gaps = S.match.gaps, gapM = gaps.reduce((s, g) => s + g.m, 0);
+  const row = (what, sub, btns) => `<div class="item"><span class="what">${what}<small>${sub}</small></span><span class="row">${btns}</span></div>`;
+  el.innerHTML =
+    row(`Follows ${fmtKm(c.all)} km of paths`, c.trailM ? `${fmtKm(c.trailM)} km of trail isn't in your network yet` : 'All of its trail is in your network', c.trailM ? '<button class="button sm" id="gpxtrail">Add</button>' : '') +
+    (c.roadM ? row(`${fmtKm(c.roadM)} km of road or sidewalk`, 'Your track uses it, but it isn\'t in your network', '<button class="button sm" id="gpxroad">Add</button>') : '') +
+    (gaps.length ? row(`${gaps.length} stretch${gaps.length > 1 ? 'es' : ''} OpenStreetMap doesn't have`, `${Math.round(gapM)} m, dashed on the map`, '<button class="button quiet sm" id="gpxshow">Show</button><button class="button sm" id="gpxgaps">Add</button>') : '');
+  const add = list => edit(e => { for (const x of list) e.pieces[x.id] = true; });
+  if ($('gpxtrail')) $('gpxtrail').onclick = () => add(c.offTrail);
+  if ($('gpxroad')) $('gpxroad').onclick = () => add(c.offRoad);
+  if ($('gpxshow')) $('gpxshow').onclick = () => map.fitBounds(L.latLngBounds(gaps.flatMap(g => g.pts.map(p => [p.lat, p.lon]))).pad(0.3), { maxZoom: 17 });
+  if ($('gpxgaps')) $('gpxgaps').onclick = addTrackGaps;
+}
+async function addTrackGaps() {
+  const gaps = S.match?.gaps || []; if (!gaps.length) return;
+  busy('Reading elevations…');
+  const entries = [];
+  for (const [k, g] of gaps.entries()) entries.push(await drawnEntry(g.pts.map(p => ({ node: p.node, ll: L.latLng(p.lat, p.lon) })), nextDrawnId(k)));
+  busy('');
+  edit(e => e.drawn.push(...entries), { pieces: true });
+}
+$('gpxfile').onchange = async e => {
+  const files = [...e.target.files]; e.target.value = '';
+  let added = 0;
+  for (const f of files) { try { const t = parseGpx(await f.text()); S.tracks.push(...t); added += t.length; } catch { /* reported below */ } }
+  if (!added) { toast('No track found in that file.'); return; }
+  matchTracks(); render();
+  const b = S.bbox, inside = S.tracks.flatMap(t => t.pts).filter(p => p[0] >= b[0] && p[0] <= b[2] && p[1] >= b[1] && p[1] <= b[3]);
+  if (!inside.length) toast('That track is outside this area.');
+};
+$('gpxclear').onclick = () => { S.tracks = []; matchTracks(); render(); };
 $('drawback').onclick = () => { S.drawPts.pop(); drawSketch(); };
 $('drawcancel').onclick = () => { S.drawPts = []; drawSketch(); hoverLayer.clearLayers(); };
 document.addEventListener('keydown', e => {
