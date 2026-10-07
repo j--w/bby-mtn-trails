@@ -11,13 +11,13 @@ curate it. Routes are drawn on OpenStreetMap tiles with an elevation profile and
 ## Run it locally
 
 ```bash
-npm install          # TypeScript (dev only)
+npm install
 npm run serve        # build, then open http://localhost:8000 (needs Python 3)
 npm run watch        # rebuild as you edit src/
 npm test             # build, then the tests (Node 20+)
 ```
 
-The code is TypeScript in `src/`; `npm run build` compiles it into `site/` next to the HTML (no bundler). The pages
+The code is TypeScript in `src/`; `npm run build` type checks it and bundles it with esbuild into `site/` next to the HTML. The pages
 load JSON with `fetch`, so open them through a local server, not as `file://`.
 
 ## Areas
@@ -64,10 +64,13 @@ mountSetup(document.getElementById('setup'), {
   tracks: runs.map(r => ({ name: r.name, points: r.latlng })),   // e.g. Strava latlng streams
   onCoverage: c => c && console.log(`${c.gaps.length} stretches OpenStreetMap doesn't have`),
   onAreaSaved: area => saveToAccount(area),                // then mount the route builder with { area }
+  overpass: ['https://overpass.example.org/api/interpreter'], // optional: your own Overpass server(s), tried in order
 });
 ```
 
-Without `onAreaSaved` the setup widget offers a download of the area file. Restyle either widget by setting
+Without `onAreaSaved` the setup widget offers a download of the area file. Without `overpass` it uses the public
+Overpass servers, which can be slow or refuse big boxes when busy; your own server must allow cross-origin requests.
+If the page already has Leaflet (`window.L`), both widgets use it instead of their bundled copy. Restyle either widget by setting
 `--tw-accent`, `--tw-accent-soft`, `--tw-font`, `--tw-radius` and `--tw-radius-sm` on any ancestor.
 
 ## Deploy

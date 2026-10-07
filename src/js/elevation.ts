@@ -71,7 +71,6 @@ export function terrariumSource({ zoom = 15, url = TERRARIUM_URL, loadTile = loa
 // one file per 500 km grid square; geotiff.js reads only the blocks it needs over HTTP range requests.
 export const HRDEM_BASE = 'https://canelevation-dem.s3.ca-central-1.amazonaws.com/hrdem-mosaic-1m/';
 export const HRDEM_ATTRIBUTION = 'Elevation: HRDEM, Natural Resources Canada (Open Government Licence – Canada)';
-export const GEOTIFF_URL = 'https://cdn.jsdelivr.net/npm/geotiff@3.0.5/+esm';
 
 // EPSG:3979 (NAD83(CSRS) / Canada Atlas Lambert): Lambert conformal conic, GRS80. Ignores the ~1 m
 // WGS84/NAD83(CSRS) datum difference, which is below the resolution we read at.
@@ -88,14 +87,14 @@ export function toCanadaLambert(lat: number, lon: number): [number, number] {
 // File for a projected point: grid squares of 500 km, ids `<col>_<row>`.
 export const hrdemTileId = (x: number, y: number): string => `${Math.floor((x + 3000000) / 500000)}_${Math.floor((y + 1500000) / 500000)}`;
 
-// geotiff: the geotiff.js module (loaded from GEOTIFF_URL by default). resolution: metres per pixel to read
+// geotiff: the geotiff.js module (the bundled npm package by default, loaded on first use). resolution: metres per pixel to read
 // at. On Burnaby's 3,600 nodes, 4 m read 8 MB in 5 s and 1 m read 49 MB in 23 s, with the same total climb
 // (2210 vs 2212 m after smoothing), so 4 m is the default.
 export function hrdemSource({ geotiff, resolution = 4, base = HRDEM_BASE }: HrdemOptions = {}): ElevationSource {
   const files = new Map<string, Promise<HrdemFile | null>>();
   const open = (id: string) => {
     if (!files.has(id)) files.set(id, (async () => {
-      const lib: any = geotiff || await import(GEOTIFF_URL);
+      const lib: any = geotiff || await import('geotiff');
       const tiff = await lib.fromUrl(`${base}${id}-mosaic-1m-dtm.tif`);
       const count = await tiff.getImageCount(), full = await tiff.getImage(0);
       let img = full;

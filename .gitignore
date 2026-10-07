@@ -3,6 +3,7 @@ __pycache__/
 node_modules/
 .DS_Store
 /tmp/
-# build output (npm run build compiles src/ into site/)
+# build output (npm run build bundles src/ into site/)
 /site/js/
 /site/widget/
+/site/chunks/

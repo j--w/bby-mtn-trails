@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc -p .",
-    "watch": "tsc -p . --watch",
+    "build": "tsc -p . && node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
     "test": "npm run build && node --test tests/*.test.mjs",
     "serve": "npm run build && python3 -m http.server 8000 -d site"
   },
@@ -13,6 +13,11 @@
   },
   "devDependencies": {
     "@types/leaflet": "1.9.22",
+    "esbuild": "0.28.2",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "geotiff": "3.0.5",
+    "leaflet": "1.9.4"
   }
 }
