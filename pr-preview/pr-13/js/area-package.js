@@ -1,0 +1,2 @@
+import{a,b,c,d,e,f,g,h,i,j,k}from"../chunks/chunk-DDDUTCIT.js";import"../chunks/chunk-F2QI2JOW.js";import"../chunks/chunk-YF3PM3F3.js";import"../chunks/chunk-KVMUXFPB.js";export{a as FORMAT,b as FORMAT_VERSION,c as OSM_ATTRIBUTION,f as compileArea,d as emptyEdits,j as keyOf,h as makePackage,k as pieceKind,i as readPackage,g as suggestConnectors,e as withDrawn};
+//# sourceMappingURL=area-package.js.map
