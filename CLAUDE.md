@@ -22,7 +22,9 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
     (map, controls, results, elevation profile, GPX; search runs in a blob module worker that imports
     `js/router-core.js`, so it works cross-origin). `setup-widget.js` exports `mountSetup(el, options)`, area setup
     (tracks from the host, `onCoverage`, `onAreaSaved`; compiling runs in a blob module worker that imports
-    `js/area-worker.js`). They're separate so route-only pages don't load setup. `common.js` has what both share
+    `js/area-worker.js`). They're separate so route-only pages don't load setup. Each widget keeps its state in
+    its mount function and renders the panel with Preact (`htm` templates) on every change (`paint()`); the map is
+    plain Leaflet, driven directly. `common.js` has what both share
     (Leaflet loading: the host page's `window.L` if it has one, else the npm copy bundled in `leaflet.js`, with its CSS; the theme tokens and base CSS, scoped under `.tw`).
     `model.js` holds the route builder's DOM-free parts (params, trailheads, `toRoute`, GPX). The exported types (generated
     into `trails-widget.d.ts` and `setup-widget.d.ts`, doc comments included) are the public contract: keep them
@@ -34,7 +36,7 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
     (target mode), `solveLongest` (longest-loop mode), `routeGeometry` (route → points with distance and lap),
     `reachableKm`. Shared by the widget's worker and the tests.
   - `js/area-build.js`: `buildRouterData` (snap near-misses, close dead ends, drop islands) → compact routing
-    graph. Port of the old Python build (removed; see git history). ES module, pure.
+    graph. Started as a port of the old Python build (removed; see git history). ES module, pure.
   - `js/osm.js`: Overpass query/fetch (with fallback server), parsing to a shared-node network, trail/road
     layers, junction splitting and the first-pass draft (`draftNetwork`).
   - `js/elevation.js`: elevations from HRDEM LiDAR (geotiff.js range reads, EPSG:3979) with AWS Terrain Tiles
@@ -54,7 +56,7 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
   (`tests/fixtures/burnaby-legacy.json`, frozen; the other tests use it as a reference network too).
 - `tests/area-build.test.mjs`, `tests/osm.test.mjs`, `tests/elevation.test.mjs`, `tests/area-package.test.mjs`,
   `tests/gpx.test.mjs`: the area-setup modules.
-  `tests/fixtures/synthetic-expected.json` was made by the old Python build (command in the test file).
+  `tests/fixtures/synthetic-input.json` is a small made-up network; `synthetic-expected.json` is its build output.
 
 ## Commands
 

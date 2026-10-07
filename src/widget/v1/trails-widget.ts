@@ -1,8 +1,10 @@
 // Route builder widget. mount(element, options) puts the route builder (controls, results, map, elevation profile)
 // inside one element and lays it out there: side panel when it's wide, stacked when it's narrow.
-// Types and docs: below and in model.ts (tsc emits them as trails-widget.d.ts). Leaflet loads from cdnjs if the page
-// hasn't loaded it.
+// Types and docs: below and in model.ts (tsc emits them as trails-widget.d.ts). The panel and profile are Preact
+// (htm templates) rendered from the state in mount(); the map is Leaflet, driven directly.
 import type * as Leaflet from 'leaflet';
+import { render } from 'preact';
+import { html } from 'htm/preact';
 import type { LatLonEle } from '../../js/types.js';
 import { loadLeaflet, addStyles, baseLayers, esc, themeOf, download } from './common.js';
 import { WidgetError, readArea, trailheads, trailheadList, resolveParams, problem, solverParams, toRoute, fmtTime } from './model.js';
@@ -73,7 +75,6 @@ const LAPS = [0, 8000, 10000, 12000, 15000];
 const PAVED_LABELS: Record<string, string> = { fine: 'Don’t mind', avoid: 'Avoid', 'avoid-strongly': 'Avoid strongly' };
 // Tiles are light in both themes, so map overlays use fixed light-theme colours.
 const MC = { ink: '#17202b', net: '#4d5f78', laps: ['#2155cc', '#a85f00', '#7b3fb4', '#1b7f45'] };
-const NS = 'http://www.w3.org/2000/svg';
 
 /* ---------- the router worker and styles ---------- */
 // The search runs in a worker made from a blob, so it works when this module is loaded from another site
@@ -128,6 +129,7 @@ const CSS = `
 
 const fmtKm = (m: number) => (m / 1000).toFixed(m < 10000 ? 2 : 1) + ' km';
 
+
 /* ---------- mount ---------- */
 /**
  * Trail route builder widget, v1 (trails-widget.js: a plain ES module, no build step for your page).
@@ -146,30 +148,16 @@ export function mount(element: HTMLElement, options: MountOptions = {}): TrailWi
   let opts: MountOptions = { ...options };
   const root = document.createElement('div');
   root.className = 'tw';
-  root.innerHTML = `<div class="tw-grid">
-    <div class="tw-panel">
-      <div class="tw-head"><b></b><span></span></div>
-      <form class="tw-form" novalidate></form>
-      <div class="tw-results"></div>
-      <div class="tw-take"></div>
-      <p class="tw-credits"></p>
-    </div>
-    <div class="tw-mapcol">
-      <div class="tw-mapwrap"><div class="tw-map" role="region" aria-label="Route map"></div>
-        <button type="button" class="tw-btn tw-fit">Fit route</button>
-        <div class="tw-busy" hidden>Building routes…</div><div class="tw-toast" role="status" hidden></div></div>
-      <div class="tw-profile"><svg aria-label="Elevation profile"></svg><div class="tw-tip"></div></div>
-    </div></div>`;
   element.appendChild(root);
-  // Everything q() looks up is in the markup above.
-  const q = <T extends Element = HTMLElement>(s: string) => root.querySelector<T>(s)!;
-  const form = q<HTMLFormElement>('.tw-form'), prof = q<SVGSVGElement & { _xs?: { pl: number; pr: number; W: number; total: number } }>('.tw-profile svg');
 
-  // state
+  // state (paint() renders the panel and profile from it)
   let area: LoadedArea | null = null, nodes: LatLonEle[] = [], TH: TrailheadNode[] = [], starts: number[] = [], netKm = 0, params: RouteParams | null = null;
   let raws: WorkerRoute[] = [], routes: Route[] = [], sel = 0, reach = 0, note = '', destroyed = false;
+  // what the runner has typed in the number fields, kept as text so a half-typed value isn't rewritten
+  let fields = { distance: '', climb: '' };
+  let busyOn = false, toastMsg = '', tip = '', hoverPt: number | null = null;
   let map: Leaflet.Map | null = null, layers: { net: Leaflet.LayerGroup; th: Leaflet.LayerGroup; route: Leaflet.LayerGroup } | null = null;
-  let hoverMk: Leaflet.CircleMarker | null = null, hoverPt: number | null = null;
+  let hoverMk: Leaflet.CircleMarker | null = null;
   // Worker messages are the protocol in WORKER above.
   let reqId = 0; const waiting = new Map<number, (m: any) => void>();
   let ready: Promise<unknown> = Promise.resolve();
@@ -189,7 +177,7 @@ export function mount(element: HTMLElement, options: MountOptions = {}): TrailWi
   type Hook = 'onRoutes' | 'onRoute' | 'onExport';
   const fire = <K extends Hook>(name: K, ...a: Parameters<NonNullable<MountOptions[K]>>) => { try { (opts[name] as ((...x: unknown[]) => void) | undefined)?.(...a); } catch (err) { console.error(err); } };
   let toastT: ReturnType<typeof setTimeout> | undefined;
-  const toast = (m: string) => { const t = q('.tw-toast'); t.textContent = m; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2800); };
+  const toast = (m: string) => { toastMsg = m; paint(); clearTimeout(toastT); toastT = setTimeout(() => { toastMsg = ''; paint(); }, 2800); };
 
   /* ----- area ----- */
   async function setArea(a: AreaPackage | string | undefined) {
@@ -207,55 +195,55 @@ export function mount(element: HTMLElement, options: MountOptions = {}): TrailWi
     const r = await ask({ type: 'area', data: area.data });
     if (!r || destroyed) return;
     netKm = r.km; starts = r.starts;
-    params = resolveParams(TH, opts.params, params || undefined);
+    params = resolveParams(TH, opts.params, params || undefined); syncFields();
     raws = []; routes = []; sel = 0;
-    q('.tw-head b').textContent = area.name || 'Trail routes';
-    q('.tw-head span').textContent = `${netKm.toFixed(0)} km of trail · ${TH.length} trailhead${TH.length === 1 ? '' : 's'}`;
-    q('.tw-credits').innerHTML = `Elevations are approximate. Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors.` +
-      (area.attribution?.length > 1 ? ' ' + esc(area.attribution.slice(1).join('. ')) + '.' : '');
-    renderForm(); renderResults();
+    paint();
     await mapReady; drawNetwork(); fitRoute();
   }
 
   /* ----- controls ----- */
   const shown = () => new Set(opts.controls ? opts.controls.filter(c => CONTROLS.includes(c)) : CONTROLS);
-  function renderForm() {
-    if (!area) { form.innerHTML = ''; return; }
-    const c = shown(), all = c.size === CONTROLS.length, longest = params!.mode === 'longest';
-    const lapOpts = LAPS.includes(params!.lap) ? LAPS : [...LAPS, params!.lap].sort((a, b) => a - b);
-    const field = {
-      mode: `<div class="tw-seg tw-full" role="group" aria-label="What to build"><button type="button" data-mode="target" aria-pressed="${!longest}">Hit a target</button><button type="button" data-mode="longest" aria-pressed="${longest}">Longest loop</button></div>`,
-      start: `<label class="tw-f tw-full">Start<select data-k="start">${TH.map(t => `<option value="${esc(t.id)}"${t.id === params!.start ? ' selected' : ''}>${esc(t.name)} · ${t.ele} m</option>`).join('')}</select></label>`,
-      distance: longest ? '' : `<label class="tw-f">Distance<div class="tw-unit"><input type="number" data-k="distance" min="3" max="80" step="0.5" value="${params!.distance / 1000}"><span>km</span></div></label>`,
-      climb: longest ? '' : `<label class="tw-f">Climb<div class="tw-unit"><input type="number" data-k="climb" min="0" max="5000" step="50" value="${params!.climb}"><span>m</span></div></label>`,
-      lap: longest ? '' : `<label class="tw-f">Back at start every<select data-k="lap">${lapOpts.map(v => `<option value="${v}"${v === params!.lap ? ' selected' : ''}>${v ? `~${v / 1000} km` : 'Don’t need to'}</option>`).join('')}</select></label>`,
-      paved: longest ? '' : `<label class="tw-f">Paved sections<select data-k="paved">${Object.entries(PAVED_LABELS).map(([v, l]) => `<option value="${v}"${v === params!.paved ? ' selected' : ''}>${l}</option>`).join('')}</select></label>`,
-    };
-    const pick = ks => ks.filter(k => c.has(k)).map(k => field[k]).join('');
-    const extra = pick(['lap', 'paved']);
-    form.innerHTML = pick(['mode', 'start']) +
-      (longest ? `<p class="tw-small tw-full">The longest loops from this start, from no repeated trail up to covering every trail with as few repeats as possible.</p>` : '') +
-      pick(['distance', 'climb']) +
-      (!longest && c.has('distance') && c.has('climb') ? `<p class="tw-small tw-full" data-ratio></p>` : '') +
-      (all && extra ? `<details class="tw-more tw-full"><summary>More options</summary><div class="tw-form">${extra}</div></details>` : extra) +
-      `<div class="tw-row tw-full"><button type="submit" class="tw-btn tw-primary" data-go>Build routes</button>${longest ? '' : '<button type="button" class="tw-btn" data-shuffle>New variations</button>'}</div>`;
-    form.querySelectorAll<HTMLElement>('[data-mode]').forEach(b => b.onclick = () => { readForm(); params!.mode = b.dataset.mode as RouteMode; renderForm(); });
-    form.querySelector('[data-shuffle]')?.addEventListener('click', () => { readForm(); params!.seed = Math.floor(Math.random() * 90000) + 10000; build(); });
-    form.querySelectorAll('[data-k=distance],[data-k=climb]').forEach(i => i.addEventListener('input', ratio));
-    ratio();
-  }
-  function ratio() {
-    const r = form.querySelector('[data-ratio]'); if (!r) return;
-    const D = +form.querySelector<HTMLInputElement>('[data-k=distance]')!.value, E = +form.querySelector<HTMLInputElement>('[data-k=climb]')!.value;
-    r.textContent = D > 0 ? `${Math.round(E / D)} m of climb per km` : '';
-  }
+  const typing = () => { const c = shown(); return params!.mode !== 'longest' && (c.has('distance') || c.has('climb')); };
+  function syncFields() { fields = { distance: String(params!.distance / 1000), climb: String(params!.climb) }; }
+  // the number fields into params (the selects write params as they change)
   function readForm() {
-    form.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-k]').forEach(el => {
-      const k = el.dataset.k!, v = el.value;
-      (params as unknown as Record<string, number | string>)[k] = k === 'distance' ? +v * 1000 : k === 'climb' || k === 'lap' ? +v : v;
-    });
+    if (!params || !typing()) return;
+    const c = shown();
+    if (c.has('distance')) params.distance = +fields.distance * 1000;
+    if (c.has('climb')) params.climb = +fields.climb;
   }
-  form.addEventListener('submit', e => { e.preventDefault(); build(); });
+  const setParam = (k: 'start' | 'paved' | 'lap', v: string) => { (params as unknown as Record<string, string | number>)[k] = k === 'lap' ? +v : v; };
+  function Controls() {
+    if (!area || !params) return null;
+    const p = params, c = shown(), all = c.size === CONTROLS.length, longest = p.mode === 'longest';
+    const lapOpts = LAPS.includes(p.lap) ? LAPS : [...LAPS, p.lap].sort((a, b) => a - b);
+    const num = (k: 'distance' | 'climb', label: string, unit: string, min: number, max: number, step: number) => html`
+      <label class="tw-f">${label}<div class="tw-unit"><input type="number" data-k=${k} min=${min} max=${max} step=${step} value=${fields[k]}
+        onInput=${(e: Event) => { fields[k] = (e.currentTarget as HTMLInputElement).value; paint(); }} /><span>${unit}</span></div></label>`;
+    const select = (k: 'start' | 'paved' | 'lap', label: string, value: string | number, opts: Array<[string | number, string]>, full = false) => html`
+      <label class=${'tw-f' + (full ? ' tw-full' : '')}>${label}<select data-k=${k} value=${String(value)} onChange=${(e: Event) => setParam(k, (e.currentTarget as HTMLSelectElement).value)}>
+        ${opts.map(([v, l]) => html`<option value=${String(v)}>${l}</option>`)}</select></label>`;
+    const field: Record<RouteControl, unknown> = {
+      mode: html`<div class="tw-seg tw-full" role="group" aria-label="What to build">
+        ${(['target', 'longest'] as RouteMode[]).map(m => html`<button type="button" data-mode=${m} aria-pressed=${String(p.mode === m)}
+          onClick=${() => { readForm(); p.mode = m; paint(); }}>${m === 'target' ? 'Hit a target' : 'Longest loop'}</button>`)}</div>`,
+      start: select('start', 'Start', p.start, TH.map(t => [t.id, `${t.name} · ${t.ele} m`]), true),
+      distance: longest ? null : num('distance', 'Distance', 'km', 3, 80, 0.5),
+      climb: longest ? null : num('climb', 'Climb', 'm', 0, 5000, 50),
+      lap: longest ? null : select('lap', 'Back at start every', p.lap, lapOpts.map(v => [v, v ? `~${v / 1000} km` : 'Don’t need to'])),
+      paved: longest ? null : select('paved', 'Paved sections', p.paved, Object.entries(PAVED_LABELS)),
+    };
+    const pick = (ks: RouteControl[]) => ks.filter(k => c.has(k) && field[k]).map(k => field[k]);
+    const extra = pick(['lap', 'paved']), D = +fields.distance, E = +fields.climb;
+    return html`
+      ${pick(['mode', 'start'])}
+      ${longest && html`<p class="tw-small tw-full">The longest loops from this start, from no repeated trail up to covering every trail with as few repeats as possible.</p>`}
+      ${pick(['distance', 'climb'])}
+      ${!longest && c.has('distance') && c.has('climb') && html`<p class="tw-small tw-full" data-ratio>${D > 0 ? `${Math.round(E / D)} m of climb per km` : ''}</p>`}
+      ${all && extra.length ? html`<details class="tw-more tw-full"><summary>More options</summary><div class="tw-form">${extra}</div></details>` : extra}
+      <div class="tw-row tw-full"><button type="submit" class="tw-btn tw-primary" data-go disabled=${busyOn}>Build routes</button>
+        ${!longest && html`<button type="button" class="tw-btn" data-shuffle onClick=${() => { readForm(); p.seed = Math.floor(Math.random() * 90000) + 10000; build(); }}>New variations</button>`}</div>`;
+  }
 
   /* ----- search ----- */
   async function build() {
@@ -276,17 +264,16 @@ export function mount(element: HTMLElement, options: MountOptions = {}): TrailWi
     const latest = r.id === reqId;
     const found = r.routes.map((x, i) => toRoute(x, i, { area: area!, nodes, params: p, start: publicTh(TH[ti]), pace: opts.prefs?.pace }));
     if (!latest) return found;
-    busy(false);
     raws = r.routes; routes = found; reach = r.reach; sel = 0;
     note = noteFor(p);
-    renderResults(); renderAll(); fitRoute();
+    busy(false); renderAll(); fitRoute();
     fire('onRoutes', routes);
     if (!routes.length) fail(new WidgetError('no-route', 'No loop fits these settings from this start.'));
     else fire('onRoute', routes[0]);
     return found;
   }
   const publicTh = ({ node, ...t }: TrailheadNode): Trailhead => t;
-  function busy(on: boolean) { q('.tw-busy').hidden = !on; const go = form.querySelector<HTMLButtonElement>('[data-go]'); if (go) go.disabled = on; }
+  function busy(on: boolean) { busyOn = on; paint(); }
   function noteFor(p: RouteParams) {
     if (!routes.length) return 'No loop fits these settings from this start. Try a shorter distance or another start.';
     if (p.mode === 'longest') return '';
@@ -298,58 +285,47 @@ export function mount(element: HTMLElement, options: MountOptions = {}): TrailWi
 
   /* ----- results ----- */
   const panelOn = (k: 'header' | 'results' | 'profile') => opts.panels?.[k] !== false;
-  function chip(what, val, target, tol, unit) {
+  function chip(what: string, val: number, target: number, tol: number, unit: string) {
     const off = val - target, ok = Math.abs(off) <= tol;
-    return `<span class="tw-chip ${ok ? 'ok' : 'off'}">${ok ? what + ' on target' : (off > 0 ? '+' : '') + Math.round(off) + ' ' + unit + ' ' + what.toLowerCase()}</span>`;
+    return html`<span class=${'tw-chip ' + (ok ? 'ok' : 'off')}>${ok ? what + ' on target' : (off > 0 ? '+' : '') + Math.round(off) + ' ' + unit + ' ' + what.toLowerCase()}</span>`;
   }
-  function renderResults() {
-    const el = q('.tw-results');
-    if (!panelOn('results') || (!routes.length && !note)) { el.innerHTML = ''; renderTake(); return; }
-    if (!routes.length) { el.innerHTML = `<div class="tw-notice">${esc(note)}</div>`; renderTake(); return; }
+  const pct = (a: number, b: number) => Math.round(a / b * 100);
+  function Results() {
+    if (!panelOn('results') || (!routes.length && !note)) return null;
+    if (!routes.length) return html`<div class="tw-notice">${note}</div>`;
     const p = routes[0].params, longest = p.mode === 'longest';
-    el.innerHTML = `<h2 class="tw-title">${longest ? 'Longest loops' : 'Options'}</h2>${note ? `<div class="tw-notice">${esc(note)}</div>` : ''}<div class="tw-opts">${routes.map((r, i) => `
-      <button type="button" class="tw-opt" data-i="${i}" aria-pressed="${i === sel}">
-        <span class="tw-letter">${'ABC'[i]}</span>
-        <span class="tw-nums">${longest ? esc(r.label) + ' · ' + fmtKm(r.distance) : fmtKm(r.distance) + ' · ↑' + Math.round(r.climb) + ' m'}</span>
-        <span class="tw-time">~${fmtTime(r.estimatedTime)}</span>
-        <span class="tw-sub">${longest
-          ? `↑${Math.round(r.climb)} m · ${Math.round(Math.min(100, (r.distance - r.repeated) / 1000 / reach * 100))}% of trails · ${Math.round(r.repeated / r.distance * 100)}% repeated`
-          : `${chip('Distance', r.distance / 1000, p.distance / 1000, p.distance / 1000 * 0.05, 'km')} ${chip('Climb', r.climb, p.climb, Math.max(40, p.climb * 0.08), 'm')} ${Math.round(r.repeated / r.distance * 100)}% repeated${r.paved > 200 ? ` · ${fmtKm(r.paved)} paved` : ''}${r.laps > 1 ? ` · ${r.laps} laps` : ''}`}</span>
-      </button>`).join('')}</div>
+    return html`<h2 class="tw-title">${longest ? 'Longest loops' : 'Options'}</h2>${note && html`<div class="tw-notice">${note}</div>`}
+      <div class="tw-opts">${routes.map((r, i) => html`
+        <button type="button" class="tw-opt" data-i=${i} aria-pressed=${String(i === sel)} onClick=${() => choose(i, true)}>
+          <span class="tw-letter">${'ABC'[i]}</span>
+          <span class="tw-nums">${longest ? r.label + ' · ' + fmtKm(r.distance) : fmtKm(r.distance) + ' · ↑' + Math.round(r.climb) + ' m'}</span>
+          <span class="tw-time">~${fmtTime(r.estimatedTime)}</span>
+          <span class="tw-sub">${longest
+            ? `↑${Math.round(r.climb)} m · ${Math.round(Math.min(100, (r.distance - r.repeated) / 1000 / reach * 100))}% of trails · ${pct(r.repeated, r.distance)}% repeated`
+            : html`${chip('Distance', r.distance / 1000, p.distance / 1000, p.distance / 1000 * 0.05, 'km')} ${chip('Climb', r.climb, p.climb, Math.max(40, p.climb * 0.08), 'm')} ${pct(r.repeated, r.distance)}% repeated${r.paved > 200 ? ` · ${fmtKm(r.paved)} paved` : ''}${r.laps > 1 ? ` · ${r.laps} laps` : ''}`}</span>
+        </button>`)}</div>
       <p class="tw-small" style="margin-top:8px">Time assumes ${paceText()}/km plus 4 s per metre of climb.</p>`;
-    el.querySelectorAll<HTMLElement>('.tw-opt').forEach(b => b.onclick = () => choose(+b.dataset.i!, true));
-    renderTake();
   }
   const paceText = () => { const s = opts.prefs?.pace || 390; return `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`; };
-  function renderTake() {
-    const el = q('.tw-take'), r = routes[sel];
-    if (!r || !panelOn('results')) { el.innerHTML = ''; return; }
-    el.innerHTML = `<h2 class="tw-title">Take it with you</h2><div class="tw-row"><button type="button" class="tw-btn tw-primary" data-dl>${opts.onExport ? 'Use this route' : 'Download GPX'}</button><button type="button" class="tw-btn" data-copy>Copy GPX</button></div>`;
-    el.querySelector<HTMLElement>('[data-dl]')!.onclick = () => {
+  function Take() {
+    const r = routes[sel];
+    if (!r || !panelOn('results')) return null;
+    const dl = () => {
       const gpx = r.gpx();
       if (opts.onExport) return fire('onExport', r, gpx);
       download(gpx, `${(area!.name + ' ' + r.label).replace(/[^\w .-]/g, '')}.gpx`, 'application/gpx+xml');
     };
-    el.querySelector<HTMLElement>('[data-copy]')!.onclick = async () => {
-      try { await navigator.clipboard.writeText(r.gpx()); toast('GPX copied.'); } catch { toast('Copying isn’t allowed here. Use Download instead.'); }
-    };
+    const copy = async () => { try { await navigator.clipboard.writeText(r.gpx()); toast('GPX copied.'); } catch { toast('Copying isn’t allowed here. Use Download instead.'); } };
+    return html`<h2 class="tw-title">Take it with you</h2><div class="tw-row"><button type="button" class="tw-btn tw-primary" data-dl onClick=${dl}>${opts.onExport ? 'Use this route' : 'Download GPX'}</button><button type="button" class="tw-btn" data-copy onClick=${copy}>Copy GPX</button></div>`;
   }
   function choose(i: number, fit: boolean) {
     sel = i;
-    q('.tw-results').querySelectorAll<HTMLElement>('.tw-opt').forEach(x => x.setAttribute('aria-pressed', String(+x.dataset.i! === sel)));
-    renderTake(); renderAll(); if (fit) fitRoute();
+    renderAll(); if (fit) fitRoute();
     fire('onRoute', routes[sel]);
   }
-  function showNotice(text: string) { note = text; routes = []; raws = []; form.innerHTML = ''; renderResults(); renderAll(); }
+  function showNotice(text: string) { note = text; routes = []; raws = []; renderAll(); }
 
   /* ----- map ----- */
-  const mapReady = loadLeaflet().then(L => {
-    if (destroyed) return;
-    map = L.map(q('.tw-map'), { zoomSnap: 0.25, preferCanvas: true });
-    baseLayers(L, map);
-    layers = { net: L.layerGroup().addTo(map), th: L.layerGroup().addTo(map), route: L.layerGroup().addTo(map) };
-    map.setView([20, 0], 2);
-  }, err => fail(err));
   const LL = (n: number): [number, number] => [nodes[n][0], nodes[n][1]];
   function drawNetwork() {
     if (!map || !layers || !area) return;
@@ -389,50 +365,74 @@ export function mount(element: HTMLElement, options: MountOptions = {}): TrailWi
     const b = r ? L.latLngBounds(r.geom.pts.map(p => LL(p.n))) : L.latLngBounds(nodes.map((n): [number, number] => [n[0], n[1]]));
     map.fitBounds(b, { padding: [30, 30] });
   }
-  q('.tw-fit').onclick = fitRoute;
 
   /* ----- elevation profile ----- */
-  const sv = (tag: string, attrs: Record<string, string | number>, parent?: Element) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, String(attrs[k])); parent?.appendChild(e); return e; };
-  function renderProfile() {
-    prof.textContent = ''; const r = raws[sel];
-    const W = prof.getBoundingClientRect().width || 600, H = 110;
-    prof.setAttribute('viewBox', `0 0 ${W} ${H}`);
-    if (!r) return;
+  let profEl: SVGSVGElement | null = null, profX: { pl: number; pr: number; W: number; total: number } | null = null;
+  function Profile() {
+    const W = profEl?.getBoundingClientRect().width || 600, H = 110, r = raws[sel];
+    profX = null;
+    if (!r) return html`<svg aria-label="Elevation profile" viewBox=${`0 0 ${W} ${H}`} ref=${(e: SVGSVGElement | null) => { profEl = e; }}></svg>`;
     const pts = r.geom.pts, total = pts[pts.length - 1].cum, es = pts.map(p => nodes[p.n][2] ?? 0);
     const lo = Math.min(...es), hi = Math.max(...es), pl = 44, pr = 8, pt = 10, pb = 20;
-    const xs = d => pl + d / total * (W - pl - pr), ys = e => H - pb - (e - lo) / Math.max(1, hi - lo) * (H - pt - pb);
+    const xs = (d: number) => pl + d / total * (W - pl - pr), ys = (e: number) => H - pb - (e - lo) / Math.max(1, hi - lo) * (H - pt - pb);
     const lbl = { 'font-size': 11, fill: 'var(--muted)', 'font-family': 'var(--font)' };
-    for (const v of [lo, hi]) { sv('line', { x1: pl, x2: W - pr, y1: ys(v), y2: ys(v), stroke: 'var(--grid)' }, prof); sv('text', { x: pl - 6, y: ys(v) + 4, 'text-anchor': 'end', ...lbl }, prof).textContent = Math.round(v) + ' m'; }
-    const step = total > 30000 ? 10000 : total > 12000 ? 5000 : 2000;
-    for (let d = 0; d <= total; d += step) sv('text', { x: xs(d), y: H - 5, 'text-anchor': d === 0 ? 'start' : 'middle', ...lbl }, prof).textContent = (d / 1000) + ' km';
+    const step = total > 30000 ? 10000 : total > 12000 ? 5000 : 2000, ticks: number[] = [];
+    for (let d = 0; d <= total; d += step) ticks.push(d);
     const line = pts.map((p, i) => xs(p.cum).toFixed(1) + ',' + ys(es[i]).toFixed(1)).join(' ');
-    sv('polygon', { points: `${pl},${H - pb} ${line} ${W - pr},${H - pb}`, fill: 'var(--accent-soft)' }, prof);
-    sv('polyline', { points: line, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 1.8, 'stroke-linejoin': 'round' }, prof);
-    for (const c of r.geom.cuts.slice(1)) sv('line', { x1: xs(c), x2: xs(c), y1: pt, y2: H - pb, stroke: 'var(--muted)', 'stroke-dasharray': '3 3', 'stroke-width': 1 }, prof);
-    if (hoverPt != null) { const p = pts[hoverPt]; sv('line', { x1: xs(p.cum), x2: xs(p.cum), y1: pt, y2: H - pb, stroke: 'var(--text)', 'stroke-width': 1 }, prof); sv('circle', { cx: xs(p.cum), cy: ys(es[hoverPt]), r: 3.5, fill: 'var(--accent)' }, prof); }
-    prof._xs = { pl, pr, W, total };
+    profX = { pl, pr, W, total };
+    const h = hoverPt != null ? pts[hoverPt] : null;
+    return html`<svg aria-label="Elevation profile" viewBox=${`0 0 ${W} ${H}`} ref=${(e: SVGSVGElement | null) => { profEl = e; }} onPointerMove=${hoverProfile} onPointerLeave=${leaveProfile}>
+      ${[lo, hi].map(v => html`<line x1=${pl} x2=${W - pr} y1=${ys(v)} y2=${ys(v)} stroke="var(--grid)" /><text x=${pl - 6} y=${ys(v) + 4} text-anchor="end" ...${lbl}>${Math.round(v) + ' m'}</text>`)}
+      ${ticks.map(d => html`<text x=${xs(d)} y=${H - 5} text-anchor=${d === 0 ? 'start' : 'middle'} ...${lbl}>${(d / 1000) + ' km'}</text>`)}
+      <polygon points=${`${pl},${H - pb} ${line} ${W - pr},${H - pb}`} fill="var(--accent-soft)" />
+      <polyline points=${line} fill="none" stroke="var(--accent)" stroke-width="1.8" stroke-linejoin="round" />
+      ${r.geom.cuts.slice(1).map(c => html`<line x1=${xs(c)} x2=${xs(c)} y1=${pt} y2=${H - pb} stroke="var(--muted)" stroke-dasharray="3 3" stroke-width="1" />`)}
+      ${h && html`<line x1=${xs(h.cum)} x2=${xs(h.cum)} y1=${pt} y2=${H - pb} stroke="var(--text)" stroke-width="1" /><circle cx=${xs(h.cum)} cy=${ys(es[hoverPt!])} r="3.5" fill="var(--accent)" />`}
+    </svg>`;
   }
-  prof.addEventListener('pointermove', e => {
-    const r = raws[sel]; if (!r || !prof._xs) return;
-    const b = prof.getBoundingClientRect(), { pl, pr, W, total } = prof._xs;
+  function hoverProfile(e: PointerEvent) {
+    const r = raws[sel]; if (!r || !profX || !profEl) return;
+    const b = profEl.getBoundingClientRect(), { pl, pr, W, total } = profX;
     const d = Math.max(0, Math.min(total, ((e.clientX - b.left) / b.width * W - pl) / (W - pl - pr) * total));
     const pts = r.geom.pts; let lo = 0, hi = pts.length - 1;
     while (hi - lo > 1) { const m = (lo + hi) >> 1; if (pts[m].cum < d) lo = m; else hi = m; }
-    hoverPt = hi; q('.tw-tip').textContent = `${(pts[hi].cum / 1000).toFixed(2)} km · ${Math.round(nodes[pts[hi].n][2] ?? 0)} m`;
-    setHover(hi); renderProfile();
-  });
-  prof.addEventListener('pointerleave', () => { hoverPt = null; q('.tw-tip').textContent = ''; setHover(null); renderProfile(); });
-
-  function renderAll() { hoverPt = null; renderMap(); renderProfile(); }
-  function applyLayout() {
-    root.dataset.theme = themeOf(opts.theme);
-    q('.tw-profile').hidden = !panelOn('profile');
-    q('.tw-head').hidden = opts.panels?.header === false;
-    const panelEmpty = !panelOn('results') && opts.controls?.length === 0 && opts.panels?.header === false;
-    q('.tw-panel').hidden = panelEmpty; q('.tw-grid').classList.toggle('tw-nopanel', panelEmpty);
+    hoverPt = hi; tip = `${(pts[hi].cum / 1000).toFixed(2)} km · ${Math.round(nodes[pts[hi].n][2] ?? 0)} m`;
+    setHover(hi); paint();
   }
+  function leaveProfile() { hoverPt = null; tip = ''; setHover(null); paint(); }
+
+  /* ----- the whole widget ----- */
+  function App() {
+    const panelEmpty = !panelOn('results') && opts.controls?.length === 0 && opts.panels?.header === false;
+    return html`<div class=${'tw-grid' + (panelEmpty ? ' tw-nopanel' : '')}>
+      <div class="tw-panel" hidden=${panelEmpty}>
+        <div class="tw-head" hidden=${opts.panels?.header === false}>${area && html`<b>${area.name || 'Trail routes'}</b><span>${netKm.toFixed(0)} km of trail · ${TH.length} trailhead${TH.length === 1 ? '' : 's'}</span>`}</div>
+        <form class="tw-form" novalidate onSubmit=${(e: Event) => { e.preventDefault(); build(); }}><${Controls} /></form>
+        <div class="tw-results"><${Results} /></div>
+        <div class="tw-take"><${Take} /></div>
+        <p class="tw-credits">${area && html`Elevations are approximate. Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors.${area.attribution?.length > 1 ? ' ' + area.attribution.slice(1).join('. ') + '.' : ''}`}</p>
+      </div>
+      <div class="tw-mapcol">
+        <div class="tw-mapwrap"><div class="tw-map" role="region" aria-label="Route map"></div>
+          <button type="button" class="tw-btn tw-fit" onClick=${fitRoute}>Fit route</button>
+          <div class="tw-busy" hidden=${!busyOn}>Building routes…</div><div class="tw-toast" role="status" hidden=${!toastMsg}>${toastMsg}</div></div>
+        <div class="tw-profile" hidden=${!panelOn('profile')}><${Profile} /><div class="tw-tip">${tip}</div></div>
+      </div></div>`;
+  }
+  function paint() { if (!destroyed) render(html`<${App} />`, root); }
+  function renderAll() { hoverPt = null; tip = ''; renderMap(); paint(); }
+  function applyLayout() { root.dataset.theme = themeOf(opts.theme); paint(); }
+
+  paint();
+  const mapReady = loadLeaflet().then(L => {
+    if (destroyed) return;
+    map = L.map(root.querySelector<HTMLElement>('.tw-map')!, { zoomSnap: 0.25, preferCanvas: true });
+    baseLayers(L, map);
+    layers = { net: L.layerGroup().addTo(map), th: L.layerGroup().addTo(map), route: L.layerGroup().addTo(map) };
+    map.setView([20, 0], 2);
+  }, err => fail(err));
   let resizeT: ReturnType<typeof setTimeout> | undefined;
-  const ro = new ResizeObserver(() => { clearTimeout(resizeT); resizeT = setTimeout(() => { map?.invalidateSize(); renderProfile(); }, 100); });
+  const ro = new ResizeObserver(() => { clearTimeout(resizeT); resizeT = setTimeout(() => { map?.invalidateSize(); paint(); }, 100); });
   ro.observe(root);
 
   applyLayout();
@@ -443,11 +443,9 @@ export function mount(element: HTMLElement, options: MountOptions = {}): TrailWi
     update(next: Partial<MountOptions> = {}) {
       const areaChanged = 'area' in next && next.area !== opts.area;
       opts = { ...opts, ...next, panels: { ...opts.panels, ...next.panels } };
+      if (areaChanged) { applyLayout(); ready = setArea(opts.area); return; }
+      if (area && next.params) { readForm(); params = resolveParams(TH, next.params, params || undefined); syncFields(); }
       applyLayout();
-      if (areaChanged) { ready = setArea(opts.area); return; }
-      if (area && next.params) { readForm(); params = resolveParams(TH, next.params, params || undefined); }
-      if (area && (next.params || next.controls)) renderForm();
-      if (next.panels || next.prefs) renderResults();
     },
     build,
     select(id: string) {
@@ -462,7 +460,7 @@ export function mount(element: HTMLElement, options: MountOptions = {}): TrailWi
       destroyed = true; ro.disconnect(); clearTimeout(toastT); clearTimeout(resizeT);
       worker.terminate(); URL.revokeObjectURL(worker._url);
       for (const d of waiting.values()) d(null); waiting.clear();
-      map?.remove(); root.remove();
+      map?.remove(); render(null, root); root.remove();
     },
   };
 }
