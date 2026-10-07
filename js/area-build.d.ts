@@ -77,22 +77,6 @@ export declare function buildRouterData(input: BuildInput, opts?: BuildOptions):
     data: RouterData;
     report: BuildReport;
 };
-export interface EditorFile {
-    _editor: {
-        segs: BuildSeg[];
-        added?: number[];
-        nodes: Record<string, {
-            type?: string;
-            name: string;
-        }>;
-    };
-}
-export interface EditorBase {
-    nodes: LatLonEle[];
-    extras: Extra[];
-    ref: RefLine[];
-}
-export declare function inputFromEditor(curated: EditorFile, editorBase: EditorBase): BuildInput;
 export declare function splitAll(segs: BuildSeg[]): BuildSeg[];
 export declare function components(segs: Array<{
     path: number[];
@@ -100,4 +84,3 @@ export declare function components(segs: Array<{
     comp: number[];
     adj: Map<number, number[]>;
 };
-export declare function pyRound(x: number, nd: number): number;
