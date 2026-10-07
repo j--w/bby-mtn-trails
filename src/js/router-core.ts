@@ -1,5 +1,6 @@
 // Route search core. Pure functions over a graph; no DOM.
 // Loaded in the browser by the route builder widget's worker and by the tests in Node.
+import FlatQueue from 'flatqueue';
 import type { RouterData, LatLonEle, SegKind, Oneway } from './types.js';
 
 /** A graph edge: one segment between junctions a and b. */
@@ -78,25 +79,21 @@ function allowed(t: Turn, limit: number){
 }
 function homeDist(start: number, limit: number){
   const n=G.adj.length, d=new Float64Array(n).fill(Infinity); d[start]=0;
-  const done=new Uint8Array(n);
-  for(;;){
-    let u=-1, best=Infinity;
-    for(let i=0;i<n;i++) if(!done[i] && d[i]<best){best=d[i];u=i;}
-    if(u<0) break; done[u]=1;
-    for(const t of G.inc[u]){ if(!allowed(t,limit)) continue; const nd=d[u]+G.edges[t.e].len; if(nd<d[t.from]) d[t.from]=nd; }
+  const done=new Uint8Array(n), q=new FlatQueue<number>(); q.push(start,0);
+  while(q.length){
+    const u=q.pop()!; if(done[u]) continue; done[u]=1;
+    for(const t of G.inc[u]){ if(!allowed(t,limit)) continue; const nd=d[u]+G.edges[t.e].len; if(nd<d[t.from]){ d[t.from]=nd; q.push(t.from,nd); } }
   }
   return d;
 }
 function pathHome(from: number, start: number, limit: number, used: Map<number, number>, pavedW: number): Turn[] | null {
   const n=G.adj.length, d=new Float64Array(n).fill(Infinity), prev: Array<Turn | null>=new Array(n).fill(null), done=new Uint8Array(n);
-  d[from]=0;
-  for(;;){
-    let u=-1,best=Infinity;
-    for(let i=0;i<n;i++) if(!done[i]&&d[i]<best){best=d[i];u=i;}
-    if(u<0||u===start) break; done[u]=1;
+  d[from]=0; const q=new FlatQueue<number>(); q.push(from,0);
+  while(q.length){
+    const u=q.pop()!; if(done[u]) continue; if(u===start) break; done[u]=1;
     for(const t of G.adj[u]){ if(!allowed(t,limit)) continue; const ed=G.edges[t.e];
       const c=ed.len*(1+1.2*(used.get(t.e)||0)+(ed.k==='connector'?pavedW*0.4:0));
-      if(d[u]+c<d[t.to]){ d[t.to]=d[u]+c; prev[t.to]=t; } }
+      if(d[u]+c<d[t.to]){ d[t.to]=d[u]+c; prev[t.to]=t; q.push(t.to,d[t.to]); } }
   }
   if(d[start]===Infinity) return null;
   const out: Turn[]=[]; let v=start; while(v!==from){ const t=prev[v]!; out.push(t); v=t.from; }
@@ -176,9 +173,9 @@ export function solveLongest(p: LongestParams): RawRoute[] {
     const A=new Map<number, Array<[number, number]>>(); for(const i of es){ const e=G.edges[i]; if(!A.has(e.a)) A.set(e.a,[]); if(!A.has(e.b)) A.set(e.b,[]); A.get(e.a)!.push([i,e.b]); A.get(e.b)!.push([i,e.a]); } return A;
   }
   function dijkstra(A: Map<number, Array<[number, number]>>, src: number){
-    const d=new Map([[src,0]]), prev=new Map<number, [number, number]>(), done=new Set<number>(); const keys=[...A.keys()];
-    for(;;){ let u: number | null=null,b=Infinity; for(const k of keys){ if(done.has(k)) continue; const v=d.get(k); if(v!==undefined&&v<b){b=v;u=k;} } if(u===null) break; done.add(u);
-      for(const [i,v] of A.get(u)!){ const nd=b+G.edges[i].len; if(nd<(d.get(v)??Infinity)){ d.set(v,nd); prev.set(v,[i,u]); } } }
+    const d=new Map([[src,0]]), prev=new Map<number, [number, number]>(), done=new Set<number>(), q=new FlatQueue<number>(); q.push(src,0);
+    while(q.length){ const u=q.pop()!; if(done.has(u)) continue; done.add(u); const b=d.get(u)!;
+      for(const [i,v] of A.get(u)!){ const nd=b+G.edges[i].len; if(nd<(d.get(v)??Infinity)){ d.set(v,nd); prev.set(v,[i,u]); q.push(v,nd); } } }
     return {d,prev};
   }
   function tJoin(es: number[]): number[] { // min-ish T-join: match odd vertices by shortest paths, greedy then 2-opt
