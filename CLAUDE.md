@@ -14,7 +14,7 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
   land. `import code from 'worker:<path>'` (a build.mjs plugin, typed in `src/workers.d.ts`) bundles a worker module on
   its own and inlines it as a string; the widgets start their workers from that as a blob, so they don't depend on
   any file's URL (don't reintroduce `new URL(..., import.meta.url)`: an app's bundler moves and renames the files).
-- The repo is also an npm package that apps install from the git URL (`npm install github:j--w/bby-mtn-trails`):
+- The repo is also an npm package that apps install from the git URL (`npm install github:j--w/trail-run-auto-router`):
   `prepare` runs the build, `files` ships `site/widget/`, `site/js/` and `site/chunks/`, and `exports` maps `.` to
   the route builder, `./setup` to area setup and `./widget/v1/*.js` to the files by path. Runtime libraries are
   bundled, so they're devDependencies; `@types/leaflet` is a dependency because the widgets' `.d.ts` files import it.

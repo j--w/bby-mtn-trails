@@ -79,7 +79,7 @@ Apps with a bundler can install the widgets from this repo instead of loading th
 on install (`prepare`), so pin a commit or tag to get the same build every time:
 
 ```bash
-npm install github:j--w/bby-mtn-trails#<commit or tag>
+npm install github:j--w/trail-run-auto-router#<commit or tag>
 ```
 
 ```ts
