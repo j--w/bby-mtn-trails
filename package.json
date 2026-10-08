@@ -1,27 +1,52 @@
 {
   "name": "trail-route-builder",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
+  "license": "MIT",
+  "description": "Trail-running loop builder and area setup widgets (route search, GPX export) on an OpenStreetMap trail network.",
+  "exports": {
+    ".": {
+      "types": "./site/widget/v1/trails-widget.d.ts",
+      "default": "./site/widget/v1/trails-widget.js"
+    },
+    "./setup": {
+      "types": "./site/widget/v1/setup-widget.d.ts",
+      "default": "./site/widget/v1/setup-widget.js"
+    },
+    "./widget/v1/*.js": {
+      "types": "./site/widget/v1/*.d.ts",
+      "default": "./site/widget/v1/*.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./site/widget/v1/trails-widget.d.ts",
+  "files": [
+    "site/widget/",
+    "site/js/",
+    "site/chunks/"
+  ],
   "scripts": {
     "build": "tsc -p . && node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "test": "npm run build && node --test tests/*.test.mjs",
-    "serve": "npm run build && python3 -m http.server 8000 -d site"
+    "serve": "npm run build && python3 -m http.server 8000 -d site",
+    "prepare": "npm run build"
   },
   "engines": {
     "node": ">=20"
   },
-  "devDependencies": {
-    "@types/leaflet": "1.9.22",
-    "esbuild": "0.28.2",
-    "typescript": "7.0.2"
-  },
   "dependencies": {
+    "@types/leaflet": "1.9.22"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
     "flatqueue": "3.1.0",
     "geotiff": "3.0.5",
     "htm": "3.1.1",
     "idb-keyval": "6.3.0",
     "leaflet": "1.9.4",
-    "preact": "10.29.8"
+    "preact": "10.29.8",
+    "typescript": "7.0.2"
   }
 }
