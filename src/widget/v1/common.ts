@@ -11,7 +11,9 @@ let leaflet: Promise<LeafletNS> | null = null;
 export function loadLeaflet(): Promise<LeafletNS> {
   if (page.L?.map) return Promise.resolve(page.L);
   return leaflet ||= import('./leaflet.js').then(m => {
-    if (!document.querySelector('link[href*="leaflet"]')) addStyles('tw-leaflet', m.css);
+    // Skip our CSS only when the page has Leaflet's stylesheet: a bundler's <link rel="modulepreload"> for
+    // leaflet.js also has "leaflet" in its href.
+    if (!document.querySelector('link[rel="stylesheet"][href*="leaflet"]')) addStyles('tw-leaflet', m.css);
     return page.L = m.default;
   }, () => { leaflet = null; throw new WidgetError('map-unavailable', 'The map library couldn’t load.'); });
 }
