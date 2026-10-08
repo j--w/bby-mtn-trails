@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../node_modules/geotiff/src/compression/packbits.js"],
+  "sourcesContent": ["import BaseDecoder from './basedecoder.js';\n\nexport default class PackbitsDecoder extends BaseDecoder {\n  /** @param {ArrayBuffer} buffer */\n  decodeBlock(buffer) {\n    const dataView = new DataView(buffer);\n    const out = [];\n\n    for (let i = 0; i < buffer.byteLength; ++i) {\n      let header = dataView.getInt8(i);\n      if (header < 0) {\n        const next = dataView.getUint8(i + 1);\n        header = -header;\n        for (let j = 0; j <= header; ++j) {\n          out.push(next);\n        }\n        i += 1;\n      } else {\n        for (let j = 0; j <= header; ++j) {\n          out.push(dataView.getUint8(i + j + 1));\n        }\n        i += header + 1;\n      }\n    }\n    return new Uint8Array(out).buffer;\n  }\n}\n"],
+  "mappings": "oEAEA,IAAqBA,EAArB,cAA6CC,CAAW,CAEtD,YAAYC,EAAM,CAChB,IAAMC,EAAW,IAAI,SAASD,CAAM,EAC9BE,EAAM,CAAA,EAEZ,QAASC,EAAI,EAAGA,EAAIH,EAAO,WAAY,EAAEG,EAAG,CAC1C,IAAIC,EAASH,EAAS,QAAQE,CAAC,EAC/B,GAAIC,EAAS,EAAG,CACd,IAAMC,EAAOJ,EAAS,SAASE,EAAI,CAAC,EACpCC,EAAS,CAACA,EACV,QAASE,EAAI,EAAGA,GAAKF,EAAQ,EAAEE,EAC7BJ,EAAI,KAAKG,CAAI,EAEfF,GAAK,CACP,KAAO,CACL,QAASG,EAAI,EAAGA,GAAKF,EAAQ,EAAEE,EAC7BJ,EAAI,KAAKD,EAAS,SAASE,EAAIG,EAAI,CAAC,CAAC,EAEvCH,GAAKC,EAAS,CAChB,CACF,CACA,OAAO,IAAI,WAAWF,CAAG,EAAE,MAC7B",
+  "names": ["PackbitsDecoder", "BaseDecoder", "buffer", "dataView", "out", "i", "header", "next", "j"]
+}
