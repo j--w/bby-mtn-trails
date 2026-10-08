@@ -7,6 +7,8 @@ import { render } from 'preact';
 import { html } from 'htm/preact';
 import type { LatLonEle } from '../../js/types.js';
 import { loadLeaflet, addStyles, baseLayers, esc, themeOf, download } from './common.js';
+// The search runs in a worker started from this inlined code (see js/router-worker.ts).
+import routerWorker from 'worker:../../js/router-worker.js';
 import { WidgetError, readArea, trailheads, trailheadList, resolveParams, problem, solverParams, toRoute, fmtTime } from './model.js';
 import type { AreaPackage, LoadedArea, Trailhead, TrailheadNode, RouteMode, RouteParams, Route, WorkerRoute } from './model.js';
 
@@ -76,26 +78,7 @@ const PAVED_LABELS: Record<string, string> = { fine: 'Don’t mind', avoid: 'Avo
 // Tiles are light in both themes, so map overlays use fixed light-theme colours.
 const MC = { ink: '#17202b', net: '#4d5f78', laps: ['#2155cc', '#a85f00', '#7b3fb4', '#1b7f45'] };
 
-/* ---------- the router worker and styles ---------- */
-// The search runs in a worker made from a blob, so it works when this module is loaded from another site
-// (a worker script itself must be same-origin; the module it imports need not be, given CORS).
-const CORE = new URL('../../js/router-core.js', import.meta.url).href;
-const WORKER = `import { buildGraph, setGraph, workerGraph, solve, solveLongest, reachableKm, routeGeometry } from ${JSON.stringify(CORE)};
-let graph = null, nodes = null;
-onmessage = e => {
-  const m = e.data;
-  if (m.type === 'area') {
-    nodes = m.data.nodes; graph = buildGraph(m.data); setGraph(workerGraph(graph));
-    postMessage({ type: 'ready', id: m.id, km: graph.edges.reduce((a, x) => a + x.len, 0) / 1000, starts: m.data.th.map(t => graph.J(t.node)) });
-  } else if (m.type === 'search') {
-    try {
-      const p = m.params, res = p.mode === 'longest' ? solveLongest(p) : solve(p);
-      postMessage({ type: 'routes', id: m.id, reach: p.mode === 'longest' ? reachableKm(p.start, p.maxg, graph.edges, graph.adj) : 0,
-        routes: res.map(r => ({ label: r.label || '', desc: r.desc || '', s: r.s, laps: r.laps || 1, geom: routeGeometry(r, graph.edges, nodes) })) });
-    } catch (err) { postMessage({ type: 'routes', id: m.id, error: String(err && err.message || err) }); }
-  }
-};`;
-
+/* ---------- styles ---------- */
 const CSS = `
 .tw-grid.tw-nopanel{grid-template-columns:minmax(0,1fr)}
 .tw-profile{border-top:1px solid var(--border);background:var(--surface);padding:8px 12px 6px;position:relative}
@@ -158,12 +141,12 @@ export function mount(element: HTMLElement, options: MountOptions = {}): TrailWi
   let busyOn = false, toastMsg = '', tip = '', hoverPt: number | null = null;
   let map: Leaflet.Map | null = null, layers: { net: Leaflet.LayerGroup; th: Leaflet.LayerGroup; route: Leaflet.LayerGroup } | null = null;
   let hoverMk: Leaflet.CircleMarker | null = null;
-  // Worker messages are the protocol in WORKER above.
+  // Worker messages are the protocol in js/router-worker.ts.
   let reqId = 0; const waiting = new Map<number, (m: any) => void>();
   let ready: Promise<unknown> = Promise.resolve();
 
   const worker = (() => {
-    const url = URL.createObjectURL(new Blob([WORKER], { type: 'text/javascript' }));
+    const url = URL.createObjectURL(new Blob([routerWorker], { type: 'text/javascript' }));
     return Object.assign(new Worker(url, { type: 'module' }), { _url: url });
   })();
   worker.onmessage = e => {

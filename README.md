@@ -73,6 +73,22 @@ Overpass servers, which can be slow or refuse big boxes when busy; your own serv
 If the page already has Leaflet (`window.L`), both widgets use it instead of their bundled copy. Restyle either widget by setting
 `--tw-accent`, `--tw-accent-soft`, `--tw-font`, `--tw-radius` and `--tw-radius-sm` on any ancestor.
 
+### Install in an app
+
+Apps with a bundler can install the widgets from this repo instead of loading them from the site. npm builds them
+on install (`prepare`), so pin a commit or tag to get the same build every time:
+
+```bash
+npm install github:j--w/bby-mtn-trails#<commit or tag>
+```
+
+```ts
+import { mount, readArea, type Route } from 'trail-route-builder';   // the route builder (trails-widget.js)
+import { mountSetup } from 'trail-route-builder/setup';               // area setup (setup-widget.js)
+```
+
+Types come with it. The workers are inlined into the widgets, so they need no extra files or bundler settings.
+
 ## Deploy
 
 Go to **Settings → Pages → Source: Deploy from a branch, `gh-pages`, `/ (root)`**. Every push to `main` publishes

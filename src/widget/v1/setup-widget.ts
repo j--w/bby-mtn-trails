@@ -18,6 +18,8 @@ import { sampleElevations, hrdemSource, terrariumSource, smoothAlongSegments, SM
 import { makePackage, readPackage, emptyEdits, keyOf, withDrawn } from '../../js/area-package.js';
 import { parseGpx as parseGpxRaw, matchTrack } from '../../js/gpx.js';
 import { loadArea, saveArea } from '../../js/area-store.js';
+// Compiling runs in a worker started from this inlined code, so it works wherever the widget is loaded from.
+import areaWorker from 'worker:../../js/area-worker.js';
 
 export { WidgetError, readArea };
 export type { AreaPackage };
@@ -117,8 +119,6 @@ const WARN_KM2 = 30, MAX_KM2 = 120;
 const MC = { in: '#2155cc', auto: '#a85f00', cut: '#c2410c', off: '#8a93a0', road: '#b0b8c4', sugg: '#7b3fb4', track: '#d6336c', ink: '#17202b' };
 // one set of sources per page, so the LiDAR file headers are read once
 const ELE_SOURCES = [hrdemSource(), terrariumSource()];
-// Compiling runs in a module worker made from a blob, so it works when this module comes from another site.
-const AREA_WORKER = new URL('../../js/area-worker.js', import.meta.url).href;
 
 const CSS = `
 .tws-stack{display:flex;flex-direction:column;gap:12px}
@@ -207,7 +207,7 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
   const tracks = () => [...S.hostTracks, ...S.fileTracks];
 
   /* ----- compile in a worker ----- */
-  const workerUrl = URL.createObjectURL(new Blob([`import ${JSON.stringify(AREA_WORKER)};`], { type: 'text/javascript' }));
+  const workerUrl = URL.createObjectURL(new Blob([areaWorker], { type: 'text/javascript' }));
   const worker = new Worker(workerUrl, { type: 'module' });
   let reqId = 0, needPieces = true;
   worker.onmessage = (e: MessageEvent<Compiled>) => {

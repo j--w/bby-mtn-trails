@@ -11,18 +11,22 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
   `scripts/build.mjs` (esbuild), which bundles every `src/js/*.ts` and `src/widget/v1/*.ts` to the same path under
   `site/` as an ES module, resolving npm imports; code shared between modules goes in `site/chunks/`. `site/js/`,
   `site/widget/` and `site/chunks/` are build output (gitignored); edit `src/`. Paths below are where the built files
-  land. Code that uses `import.meta.url` (the widgets' worker URLs) must stay in the entry module, not code shared
-  into a chunk, or its relative URLs break.
+  land. `import code from 'worker:<path>'` (a build.mjs plugin, typed in `src/workers.d.ts`) bundles a worker module on
+  its own and inlines it as a string; the widgets start their workers from that as a blob, so they don't depend on
+  any file's URL (don't reintroduce `new URL(..., import.meta.url)`: an app's bundler moves and renames the files).
+- The repo is also an npm package that apps install from the git URL (`npm install github:j--w/bby-mtn-trails`):
+  `prepare` runs the build, `files` ships `site/widget/`, `site/js/` and `site/chunks/`, and `exports` maps `.` to
+  the route builder, `./setup` to area setup and `./widget/v1/*.js` to the files by path. Runtime libraries are
+  bundled, so they're devDependencies; `@types/leaflet` is a dependency because the widgets' `.d.ts` files import it.
 - `site/` is the deployed static site (GitHub Pages serves it from the `gh-pages` branch; `pages.yml` publishes main
   there and `preview.yml` puts each PR at `pr-preview/pr-<number>/`).
   - `index.html`: the route builder page, a thin consumer of the widget (top bar, start screen). Opens
     `?area=<url of a .trails.json>`, else the last area opened in this browser (IndexedDB `current`), else a start
     screen (open an area file / set one up).
   - `widget/v1/`: the two embeddable widgets. `trails-widget.js` exports `mount(el, options)`, the route builder
-    (map, controls, results, elevation profile, GPX; search runs in a blob module worker that imports
-    `js/router-core.js`, so it works cross-origin). `setup-widget.js` exports `mountSetup(el, options)`, area setup
-    (tracks from the host, `onCoverage`, `onAreaSaved`; compiling runs in a blob module worker that imports
-    `js/area-worker.js`). They're separate so route-only pages don't load setup. Each widget keeps its state in
+    (map, controls, results, elevation profile, GPX; search runs in a worker, `js/router-worker.ts` inlined, so it
+    works cross-origin and inside an app's bundle). `setup-widget.js` exports `mountSetup(el, options)`, area setup
+    (tracks from the host, `onCoverage`, `onAreaSaved`; compiling runs in a worker, `js/area-worker.ts` inlined). They're separate so route-only pages don't load setup. Each widget keeps its state in
     its mount function and renders the panel with Preact (`htm` templates) on every change (`paint()`); the map is
     plain Leaflet, driven directly. `common.js` has what both share
     (Leaflet loading: the host page's `window.L` if it has one, else the npm copy bundled in `leaflet.js`, with its CSS; the theme tokens and base CSS, scoped under `.tw`).
@@ -45,7 +49,8 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
     routing graph). `compileArea`, `suggestConnectors`, `makePackage`, `readPackage`. Pure.
   - `js/gpx.js`: `parseGpx` and `matchTrack` (which network pieces a GPS track follows, and the stretches it runs
     where the network has nothing, which the setup page adds as drawn paths). Pure.
-  - `js/area-worker.js` (module worker for the setup widget, compiles off the main thread) and `js/area-store.js` (IndexedDB: the setup
+  - `js/router-worker.js` (the route builder's worker: graph and searches) and `js/area-worker.js` (the setup
+    widget's: compiles off the main thread), both inlined into their widget by the build, and `js/area-store.js` (IndexedDB: the setup
     draft and the `current` area the route builder opens).
   - `setup/index.html`: the area setup page, a thin consumer of the setup widget (top bar; saving stores the area as
     `current` and opens the route builder).
@@ -61,7 +66,7 @@ local running club. Static site (GitHub Pages); TypeScript in `src/` is bundled 
 ## Commands
 
 ```bash
-npm install
+npm install                                # also builds (prepare)
 npm run build                              # tsc (type check, .d.ts) then esbuild (bundle into site/)
 npm run watch                              # esbuild rebuilds on change (no type check)
 npm test                                   # build, then the Node tests (Node 20+) against the emitted site/ modules
