@@ -31,3 +31,5 @@ export interface RouterData {
     }>;
     version: string;
 }
+/** Equirectangular scale factors in metres/degree around the first node: [kx (lon), ky (lat)]. */
+export declare function eqScale(nodes: LatLonEle[]): [kx: number, ky: number];
