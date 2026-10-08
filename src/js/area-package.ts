@@ -4,6 +4,8 @@ import { draftNetwork, nodeKey, nodeIndex, isPaved } from './osm.js';
 import { buildRouterData } from './area-build.js';
 import type { BuildReport, BuildSeg, Trailhead } from './area-build.js';
 import type { BBox, DraftPiece, Layer, OsmTags, RawNetwork } from './osm.js';
+import FlatQueue from 'flatqueue';
+import { eqScale } from './types.js';
 import type { RouterData, SegKind } from './types.js';
 
 export const FORMAT = 'trail-area' as const;
@@ -81,9 +83,8 @@ export function withDrawn(raw: RawNetwork, drawn: DrawnPath[] = []): RawNetwork 
   return { ...raw, nodes, osmNodes, ways };
 }
 
-const R = 6371000;
 function metres(raw: RawNetwork): (a: number, b: number) => number {
-  const N = raw.nodes, lat0 = N.length ? N[0][0] * Math.PI / 180 : 0, kx = Math.PI / 180 * R * Math.cos(lat0), ky = Math.PI / 180 * R;
+  const N = raw.nodes, [kx, ky] = eqScale(N);
   return (a, b) => Math.hypot((N[a][1] - N[b][1]) * kx, (N[a][0] - N[b][0]) * ky);
 }
 const stripSuffix = (id: string) => id.replace(/[bt]+$/, '');
@@ -143,16 +144,15 @@ export function suggestConnectors(raw: RawNetwork, compiled: CompiledArea, edits
   const G = new Map<number, Array<[number, number, string]>>(), link = (a: number, b: number, m: number, id: string) => { if (!G.has(a)) G.set(a, []); G.get(a)!.push([b, m, id]); };
   for (const p of pieces) if (p.state === 'off') for (let k = 1; k < p.path.length; k++) { const a = p.path[k - 1], b = p.path[k], m = dist(a, b); link(a, b, m, p.id); link(b, a, m, p.id); }
   const search = (sources: number[], isTarget: (n: number) => boolean, limit: number): { m: number; ids: string[] } | null => {
-    const best = new Map<number, number>(), prev = new Map<number, [number, string]>(), heap: Array<[number, number]> = [];
-    for (const s of sources) { best.set(s, 0); heap.push([0, s]); }
+    const best = new Map<number, number>(), prev = new Map<number, [number, string]>(), heap = new FlatQueue<number>();
+    for (const s of sources) { best.set(s, 0); heap.push(s, 0); }
     while (heap.length) {
-      heap.sort((x, y) => y[0] - x[0]);
-      const [c, u] = heap.pop()!;
-      if (c > best.get(u)!) continue;
+      const c = heap.peekValue()!, u = heap.pop()!;
+      if (c > (best.get(u) ?? Infinity)) continue;
       if (c > 0 && isTarget(u)) { const ids: string[] = []; for (let v = u; prev.has(v); v = prev.get(v)![0]) if (!ids.includes(prev.get(v)![1])) ids.push(prev.get(v)![1]); return { m: c, ids }; }
       for (const [v, m, id] of G.get(u) || []) {
         const nc = c + m;
-        if (nc <= limit && nc < (best.get(v) ?? Infinity)) { best.set(v, nc); prev.set(v, [u, id]); heap.push([nc, v]); }
+        if (nc <= limit && nc < (best.get(v) ?? Infinity)) { best.set(v, nc); prev.set(v, [u, id]); heap.push(v, nc); }
       }
     }
     return null;

@@ -1,6 +1,7 @@
 // OpenStreetMap: Overpass query and fetch, parsing into a node/way network, and the first-pass draft
 // (which pieces start included as trails, which are left as connector candidates). Pure functions except
 // fetchOsm, which takes the fetch function as an option so tests can stub it.
+import { eqScale } from './types.js';
 import type { LatLonEle } from './types.js';
 import type { BuildSeg, Extra, RefLine } from './area-build.js';
 
@@ -159,8 +160,8 @@ export function splitWays(ways: RawWay[], { breaks = new Set<number>(), key = (n
 export function draftNetwork(raw: RawNetwork, { stubMax = 25, overrides = {}, breaks }: DraftOptions = {}): Draft {
   // len and included are set just below
   const pieces = splitWays(raw.ways, { breaks, key: n => nodeKey(raw, n) }) as DraftPiece[];
-  const N = raw.nodes, lat0 = N.length ? N[0][0] * Math.PI / 180 : 0, R = 6371000, cos0 = Math.cos(lat0);
-  const dist = (a: number, b: number) => Math.hypot((N[a][1] - N[b][1]) * Math.PI / 180 * R * cos0, (N[a][0] - N[b][0]) * Math.PI / 180 * R);
+  const N = raw.nodes, [kx, ky] = eqScale(N);
+  const dist = (a: number, b: number) => Math.hypot((N[a][1] - N[b][1]) * kx, (N[a][0] - N[b][0]) * ky);
   const len = (p: number[]) => { let s = 0; for (let i = 1; i < p.length; i++) s += dist(p[i - 1], p[i]); return s; };
   for (const pc of pieces) { pc.len = len(pc.path); pc.included = pc.id in overrides ? overrides[pc.id] : pc.layer === 'trail'; }
   for (let round = 0; round < 5; round++) {

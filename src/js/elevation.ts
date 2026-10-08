@@ -1,6 +1,7 @@
 // Elevations for a new area: Canada's HRDEM LiDAR where it exists, AWS Terrain Tiles everywhere else,
 // plus the climb counting that keeps noisy elevations from inflating climb. No DOM; the browser defaults
 // (image decoding, geotiff.js) are only touched when a source is used without its loader option.
+import { eqScale } from './types.js';
 import type { LatLonEle, RouterData } from './types.js';
 
 /** An elevation source: metres for each [lat, lon], null where it has no data. */
@@ -173,7 +174,7 @@ export async function sampleElevations(points: number[][], sources: ElevationSou
 export const SMOOTHING: Record<string, number> = { hrdem: 30, 'terrain-tiles': 50 };
 export function smoothAlongSegments(data: RouterData, window = 30): RouterData {
   const N = data.nodes, out = N.map(n => n[2]);
-  const lat0 = N[0][0] * Math.PI / 180, kx = Math.PI / 180 * 6371000 * Math.cos(lat0), ky = Math.PI / 180 * 6371000;
+  const [kx, ky] = eqScale(N);
   for (const s of data.segs) {
     const p = s.p, d: number[] = [0];
     for (let k = 1; k < p.length; k++) d.push(d[k - 1] + Math.hypot((N[p[k]][1] - N[p[k - 1]][1]) * kx, (N[p[k]][0] - N[p[k - 1]][0]) * ky));

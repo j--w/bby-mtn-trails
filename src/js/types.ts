@@ -30,3 +30,9 @@ export interface RouterData {
   ref: Array<{ c: Array<[number, number]>; k: string }>;
   version: string;
 }
+
+/** Equirectangular scale factors in metres/degree around the first node: [kx (lon), ky (lat)]. */
+export function eqScale(nodes: LatLonEle[]): [kx: number, ky: number] {
+  const k = Math.PI / 180 * 6371000;
+  return [k * Math.cos((nodes[0]?.[0] ?? 0) * Math.PI / 180), k];
+}

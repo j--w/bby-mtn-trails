@@ -1,6 +1,7 @@
 // Route search core. Pure functions over a graph; no DOM.
 // Loaded in the browser by the route builder widget's worker and by the tests in Node.
 import FlatQueue from 'flatqueue';
+import { eqScale } from './types.js';
 import type { RouterData, LatLonEle, SegKind, Oneway } from './types.js';
 
 /** A graph edge: one segment between junctions a and b. */
@@ -48,8 +49,8 @@ export function workerGraph({edges, adj, inc}: Graph): Graph {
 }
 // A route's path for display: nodes with distance along the route and lap number, and where each lap starts.
 export function routeGeometry(r: { steps: Step[]; bounds: number[] }, edges: Edge[], nodes: LatLonEle[]){
-  const R=6371000, k=Math.PI/180, cos0=Math.cos(nodes[0][0]*k);
-  const d2=(a: number,b: number)=>Math.hypot((nodes[a][1]-nodes[b][1])*k*R*cos0, (nodes[a][0]-nodes[b][0])*k*R);
+  const [kx,ky]=eqScale(nodes);
+  const d2=(a: number,b: number)=>Math.hypot((nodes[a][1]-nodes[b][1])*kx, (nodes[a][0]-nodes[b][0])*ky);
   const pts: Array<{ n: number; cum: number; lap: number }>=[], lapAt=new Set(r.bounds), cuts: number[]=[]; let cum=0;
   r.steps.forEach(([e,dir],i)=>{
     if(lapAt.has(i)) cuts.push(cum);
