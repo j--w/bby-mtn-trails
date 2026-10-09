@@ -101,6 +101,8 @@ interface SetupState {
   showSugg: boolean; showRoads: boolean; hint: string; busy: string; toast: string; canLoad: boolean; saving: boolean;
   resume: { label: string; go: () => void } | null;
   step: Step; bbox: BBox | null; raw: RawNetwork | null; view: RawNetwork | null; keyIdx: Map<string, number> | null; focus: string | null;
+  // which of the tracks' missing pieces Show is highlighting
+  trackShow: 'trail' | 'road' | null;
   drawPts: DrawPt[]; hostTracks: Track[]; fileTracks: Track[]; match: TrackMatch | null; edits: Edits; name: string;
   ele: { sources: Record<string, number>; missing: number } | null; osmTimestamp: string | null; res: Compiled | null; pieces: Piece[];
   tool: Tool; undo: string[]; joinFrom: number | null; corners: Leaflet.LatLng[]; picking: boolean;
@@ -202,7 +204,7 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
   // raw: the OSM network as loaded; view: raw plus drawn paths (what piece paths and node keys refer to)
   // tracks: the host's (opts.tracks) then the runner's GPX files
   const S: SetupState = { showSugg: true, showRoads: false, hint: '', busy: '', toast: '', canLoad: false, saving: false, resume: null,
-    step: 'area', bbox: null, raw: null, view: null, keyIdx: null, focus: null, drawPts: [], hostTracks: toInternal(opts.tracks), fileTracks: [],
+    step: 'area', bbox: null, raw: null, view: null, keyIdx: null, focus: null, trackShow: null, drawPts: [], hostTracks: toInternal(opts.tracks), fileTracks: [],
     match: null, edits: emptyEdits(), name: '', ele: null, osmTimestamp: null, res: null, pieces: [], tool: 'select', undo: [], joinFrom: null, corners: [], picking: false };
   const tracks = () => [...S.hostTracks, ...S.fileTracks];
 
@@ -307,11 +309,19 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
     if (S.match) {
       const c = trackCounts(), gaps = S.match.gaps, gapM = gaps.reduce((s, g) => s + g.m, 0);
       const add = (list: TrackMatch['followed']) => edit(e => { for (const x of list) e.pieces[x.id] = true; });
-      const show = () => { const { L, map } = M(); map.fitBounds(L.latLngBounds(gaps.flatMap(g => g.pts.map((p): [number, number] => [p.lat, p.lon]))).pad(0.3), { maxZoom: 17 }); };
+      // highlight the pieces a row counts and zoom to them; the highlight follows edits, so Add clears it
+      const showPieces = (kind: 'trail' | 'road', list: TrackMatch['followed']) => {
+        const { L, map } = M();
+        S.trackShow = kind;
+        map.fitBounds(L.latLngBounds(list.flatMap(x => S.pieces.find(p => p.id === x.id)?.path.map(LL) || [])).pad(0.3), { maxZoom: 17 });
+        render();
+      };
+      const show = () => { S.trackShow = null; render(); const { L, map } = M(); map.fitBounds(L.latLngBounds(gaps.flatMap(g => g.pts.map((p): [number, number] => [p.lat, p.lon]))).pad(0.3), { maxZoom: 17 }); };
       rows = [
-        row(`Follows ${fmtKm(c.all)} km of paths`, c.trailM ? `${fmtKm(c.trailM)} km of trail isn't in your network yet` : 'All of its trail is in your network',
-          c.trailM ? html`<button type="button" class="tw-btn tw-sm" data-gpx="trail" onClick=${() => add(c.offTrail)}>Add</button>` : null),
-        c.roadM ? row(`${fmtKm(c.roadM)} km of road or sidewalk`, 'Your track uses it, but it isn\'t in your network', html`<button type="button" class="tw-btn tw-sm" data-gpx="road" onClick=${() => add(c.offRoad)}>Add</button>`) : null,
+        // under 50 m would read "0.0 km"; not worth a row
+        row(`Follows ${fmtKm(c.all)} km of paths`, c.trailM >= 50 ? `${fmtKm(c.trailM)} km of trail isn't in your network yet` : 'All of its trail is in your network',
+          c.trailM >= 50 ? html`<button type="button" class="tw-btn tw-quiet tw-sm" data-gpx="show-trail" onClick=${() => showPieces('trail', c.offTrail)}>Show</button><button type="button" class="tw-btn tw-sm" data-gpx="trail" onClick=${() => add(c.offTrail)}>Add</button>` : null),
+        c.roadM >= 50 ? row(`${fmtKm(c.roadM)} km of road or sidewalk`, 'Your track uses it, but it isn\'t in your network', html`<button type="button" class="tw-btn tw-quiet tw-sm" data-gpx="show-road" onClick=${() => showPieces('road', c.offRoad)}>Show</button><button type="button" class="tw-btn tw-sm" data-gpx="road" onClick=${() => add(c.offRoad)}>Add</button>`) : null,
         gaps.length ? row(`${gaps.length} stretch${gaps.length > 1 ? 'es' : ''} OpenStreetMap doesn't have`, `${Math.round(gapM)} m, dashed on the map`,
           html`<button type="button" class="tw-btn tw-quiet tw-sm" data-gpx="show" onClick=${show}>Show</button><button type="button" class="tw-btn tw-sm" data-gpx="gaps" onClick=${addTrackGaps}>Add</button>`) : null,
       ];
@@ -468,6 +478,14 @@ export function mountSetup(element: HTMLElement, options: SetupOptions = {}): Se
       }
       for (const [a, b] of [...r.joins, ...r.snaps]) L.polyline([LL(a), LL(b)], { color: MC.ink, weight: 2, dashArray: '2 4', interactive: false }).addTo(layers.extra);
       if (S.joinFrom != null) L.circleMarker(LL(S.joinFrom), { radius: 7, color: MC.ink, weight: 2, fillColor: '#fff', fillOpacity: 1, interactive: false }).addTo(layers.extra);
+      if (S.trackShow && S.match) {
+        const c = trackCounts();
+        for (const x of S.trackShow === 'trail' ? c.offTrail : c.offRoad) {
+          const p = S.pieces.find(q => q.id === x.id);
+          // ink on a white halo, so it stands out from the pink tracks it sits on
+          if (p) for (const [color, weight] of [['#fff', 12], [MC.ink, 6]] as const) L.polyline(p.path.map(LL), { color, weight, opacity: 1, interactive: false }).addTo(layers.extra);
+        }
+      }
       drawTrailheads();
     }
     reportCoverage();
